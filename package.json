@@ -7,7 +7,7 @@
     "typecheck": "npm --prefix apps/muhasebe-web run typecheck",
     "test": "npm --prefix apps/muhasebe-web run test",
     "build": "npm --prefix apps/muhasebe-web run build",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "verify": "npm --prefix apps/muhasebe-web run verify",
     "production:check": "npm --prefix apps/muhasebe-web run production:check",
     "parity:test": "npm run test",
     "seed:dev": "npm --prefix apps/muhasebe-web run seed:dev",
