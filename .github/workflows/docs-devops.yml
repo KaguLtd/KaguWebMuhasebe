@@ -4,35 +4,51 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "README.md"
-      - "package.json"
-      - "apps/muhasebe-web/README.md"
-      - "apps/muhasebe-web/package.json"
-      - "apps/muhasebe-web/package-lock.json"
-      - "docs/**"
-      - "scripts/README.md"
-      - "tests/parity/README.md"
+      - "apps/muhasebe-web/**"
+      - "prisma/**"
+      - "tests/**"
+      - "scripts/**"
       - ".github/workflows/**"
   pull_request:
     paths:
-      - "README.md"
-      - "package.json"
-      - "apps/muhasebe-web/README.md"
-      - "apps/muhasebe-web/package.json"
-      - "apps/muhasebe-web/package-lock.json"
-      - "docs/**"
-      - "scripts/README.md"
-      - "tests/parity/README.md"
+      - "apps/muhasebe-web/**"
+      - "prisma/**"
+      - "tests/**"
+      - "scripts/**"
       - ".github/workflows/**"
+
+concurrency:
+  group: docs-devops-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: kagu_ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_USER: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d kagu_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: apps/muhasebe-web
     env:
-      DATABASE_URL: postgresql://ci:ci@localhost:5432/kagu_ci?schema=public
       AUTH_SECRET: ci-not-for-production
+      CI: "true"
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/kagu_ci?schema=public
       KAGU_APP_ORIGIN: https://muhasebe.kagultd.com
       KAGU_BACKUP_PLAN_ACK: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,21 +61,28 @@ jobs:
           cache-dependency-path: apps/muhasebe-web/package-lock.json
 
       - name: Install app dependencies
-        run: npm ci --prefix apps/muhasebe-web
+        run: npm ci
 
-      - name: Refresh evidence snapshots
-        run: npm run evidence:refresh
+      - name: Prisma generate
+        run: npm run prisma:generate
 
-      - name: Verify workspace contract
-        run: npm run verify
+      - name: Prisma validate
+        run: npm run prisma:validate
 
-      - name: Check production contract
+      - name: Prisma migrate deploy
+        run: npx prisma migrate deploy
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Production readiness
         run: npm run production:check
-
-      - name: Upload evidence snapshots
-        uses: actions/upload-artifact@v4
-        with:
-          name: legacy-evidence
-          path: |
-            docs/LEGACY_INVENTORY.md
-            docs/LEGACY_READYNESS.md

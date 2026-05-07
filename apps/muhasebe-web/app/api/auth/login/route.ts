@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   try {
     const payload = await parseLoginPayload(request);
 
-    await loginWithPassword(payload.username, payload.password);
+    await loginWithPassword(payload.username, payload.password, request);
 
     return NextResponse.json({ ok: true });
   } catch (error) {

@@ -11,13 +11,13 @@
 
 | Rapor Alani | Web Durumu | Not |
 | --- | --- | --- |
-| Dashboard satis toplamlari | Aktif | Onayli satis faturalarindan gunluk/haftalik/aylik currency bazli toplam |
-| Dashboard stok degeri | Aktif | Stok hareketlerinden miktar, son alis faturasi veya inbound irsaliye maliyetiyle degerleme |
-| Cari ekstre | Aktif | Account ledger entries uzerinden borc/alacak/bakiye ve tarih araligi |
+| Dashboard satis toplamlari | Aktif | Etkili/onayli satis faturalarindan gunluk/haftalik/aylik currency bazli toplam |
+| Dashboard stok degeri | Aktif | Etkili stok hareketlerinden miktar, son alis faturasi veya inbound irsaliye maliyetiyle degerleme |
+| Cari ekstre | Aktif | Etkili account ledger entries uzerinden borc/alacak/bakiye ve tarih araligi |
 | Cari ekstre PDF | Aktif | Print-friendly sayfa; tarayici yazdir/PDF kaydet akisi |
-| Depo envanteri | Aktif | Stock movements uzerinden depo ve malzeme miktarlari |
-| Malzeme hareketleri | Aktif | Stock movements uzerinden malzeme bazli giris/cikis |
-| Fatura metrikleri | Aktif | Net/brut, maliyet, kar ve marj hesaplari |
+| Depo envanteri | Aktif | Etkili stock movements uzerinden depo ve malzeme miktarlari |
+| Malzeme hareketleri | Aktif | Etkili stock movements uzerinden malzeme bazli giris/cikis |
+| Fatura metrikleri | Aktif | Net/brut, bagli irsaliye tarihine gore yaklasik maliyet, kar ve marj hesaplari |
 | KDV, mizan, kasa/banka detay raporlari | Bekliyor | Legacy cikti ornekleriyle sonraki fazda genisletilecek |
 
 ## Acceptance Kaniti
@@ -30,6 +30,7 @@
 
 - Legacy rapor ciktilari gelmeden kolon sirasi ve export dosya adi tam onayli sayilmaz.
 - Dashboard stok degeri artik prototip ile ayni sekilde purchase invoice ve inbound delivery cost adaylarini birlikte siralar; outbound/iade maliyetleri degerlemeye girmez.
+- Fatura karliligi tam maliyet muhasebesi degil, operasyonel yaklasik karlilik icindir; bagli irsaliye tarihi bazli son satin alma maliyetini kullanir.
 - Server-side PDF dependency eklenmedi; secilen yol tarayici print/PDF akisi.
 
 ## Sonraki Kanit Gereksinimi

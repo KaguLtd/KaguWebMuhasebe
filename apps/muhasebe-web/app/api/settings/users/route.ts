@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminUser } from "@/lib/auth/server";
+import { requireSessionUser } from "@/lib/auth/server";
 import { createUser, listUsers } from "@/lib/admin/user-repository";
+import { requirePermissions, routePermissions } from "@/lib/http/authorization";
 import { jsonBadRequest } from "@/lib/http/response";
 import { parseUserPayload } from "@/lib/http/validation";
 
 export async function GET() {
   try {
-    await requireAdminUser();
+    const user = await requireSessionUser();
+
+    await requirePermissions(
+      user,
+      routePermissions.settingsUsersRead(),
+      "Kullanici listesini gorme yetkiniz yok",
+    );
 
     return NextResponse.json({ items: await listUsers() });
   } catch (error) {
@@ -17,7 +24,14 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    await requireAdminUser();
+    const user = await requireSessionUser();
+
+    await requirePermissions(
+      user,
+      routePermissions.settingsUsersWrite(),
+      "Kullanici olusturma yetkiniz yok",
+    );
+
     const payload = await parseUserPayload(request);
 
     return NextResponse.json({

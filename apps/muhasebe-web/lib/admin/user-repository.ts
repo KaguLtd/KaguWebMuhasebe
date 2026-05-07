@@ -1,31 +1,20 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/server/db";
 
+import { assertLastAdminAccessIsPreserved } from "@/lib/admin/guards";
 import { hashPassword } from "@/lib/auth/password";
 import { HttpError } from "@/lib/http/errors";
 
-type AdminUserRecord = {
-  displayName: string;
-  email: string | null;
-  id: string;
-  isActive: boolean;
-  passwordHash: string;
-  roles: Array<{ role: { key: string }; roleId: string }>;
-  sessions: Array<{ lastSeenAt: Date }>;
-  username: string;
-};
+const adminUserInclude = {
+  roles: { include: { role: true } },
+  sessions: { orderBy: { lastSeenAt: "desc" }, take: 1 },
+} satisfies Prisma.UserInclude;
 
-export async function listUsers() {
-  const users = await (prisma.user.findMany as unknown as (
-    args: object,
-  ) => Promise<AdminUserRecord[]>)({
-    include: {
-      roles: { include: { role: true } },
-      sessions: { orderBy: { lastSeenAt: "desc" }, take: 1 },
-    },
-    orderBy: { username: "asc" },
-  });
+type AdminUserRecord = Prisma.UserGetPayload<{ include: typeof adminUserInclude }>;
 
-  return users.map((user) => ({
+function toSettingsUser(user: AdminUserRecord) {
+  return {
     email: user.email,
     fullName: user.displayName,
     id: user.id,
@@ -35,7 +24,16 @@ export async function listUsers() {
     roleNames: user.roles.map((membership) => membership.role.key),
     status: user.isActive ? "ACTIVE" : "PASSIVE",
     username: user.username,
-  }));
+  };
+}
+
+export async function listUsers() {
+  const users = await prisma.user.findMany({
+    include: adminUserInclude,
+    orderBy: { username: "asc" },
+  });
+
+  return users.map(toSettingsUser);
 }
 
 export async function createUser(input: {
@@ -46,9 +44,10 @@ export async function createUser(input: {
   roleIds?: string[];
   username: string;
 }) {
-  const existing = await (prisma.user.findUnique as unknown as (
-    args: object,
-  ) => Promise<AdminUserRecord | null>)({ where: { username: input.username } });
+  const existing = await prisma.user.findUnique({
+    where: { username: input.username },
+    select: { id: true },
+  });
 
   if (existing) {
     throw new HttpError(400, "Bu kullanici adi zaten kayitli");
@@ -63,11 +62,13 @@ export async function createUser(input: {
   const roleIds = input.roleIds?.length ? input.roleIds : [role.id];
   const roles = await prisma.role.findMany({ where: { id: { in: roleIds } } });
 
+  if (roles.length !== roleIds.length) {
+    throw new HttpError(400, "Secilen rollerin bir kismi bulunamadi");
+  }
+
   const passwordHash = await hashPassword(input.password);
 
-  const user = await (prisma.user.create as unknown as (
-    args: object,
-  ) => Promise<AdminUserRecord>)({
+  const user = await prisma.user.create({
     data: {
       displayName: input.fullName,
       email: input.email ?? null,
@@ -80,23 +81,10 @@ export async function createUser(input: {
       },
       username: input.username,
     },
-    include: {
-      roles: { include: { role: true } },
-      sessions: { orderBy: { lastSeenAt: "desc" }, take: 1 },
-    },
+    include: adminUserInclude,
   });
 
-  return {
-    email: user.email,
-    fullName: user.displayName,
-    id: user.id,
-    isActive: user.isActive,
-    lastLoginAt: user.sessions[0]?.lastSeenAt.toISOString() ?? null,
-    roleIds: user.roles.map((membership) => membership.roleId),
-    roleNames: user.roles.map((membership) => membership.role.key),
-    status: user.isActive ? "ACTIVE" : "PASSIVE",
-    username: user.username,
-  };
+  return toSettingsUser(user);
 }
 
 export async function updateUser(
@@ -110,18 +98,20 @@ export async function updateUser(
     username?: string;
   },
 ) {
-  const current = await (prisma.user.findUnique as unknown as (
-    args: object,
-  ) => Promise<AdminUserRecord | null>)({ where: { id } });
+  const current = await prisma.user.findUnique({
+    where: { id },
+    include: { roles: { include: { role: true } } },
+  });
 
   if (!current) {
     throw new HttpError(404, "Kullanici bulunamadi");
   }
 
   if (input.username && input.username !== current.username) {
-    const existing = await (prisma.user.findUnique as unknown as (
-      args: object,
-    ) => Promise<AdminUserRecord | null>)({ where: { username: input.username } });
+    const existing = await prisma.user.findUnique({
+      where: { username: input.username },
+      select: { id: true },
+    });
 
     if (existing) {
       throw new HttpError(400, "Bu kullanici adi zaten kayitli");
@@ -129,16 +119,28 @@ export async function updateUser(
   }
 
   const passwordHash = input.password ? await hashPassword(input.password) : undefined;
-  const nextRoleIds =
+  const nextRoles =
     input.roleIds && input.roleIds.length
-      ? await prisma.role.findMany({ where: { id: { in: input.roleIds } } }).then((roles) =>
-          roles.map((role) => role.id),
-        )
+      ? await prisma.role.findMany({ where: { id: { in: input.roleIds } } })
       : null;
 
-  const user = await (prisma.user.update as unknown as (
-    args: object,
-  ) => Promise<AdminUserRecord>)({
+  if (input.roleIds && nextRoles && nextRoles.length !== input.roleIds.length) {
+    throw new HttpError(400, "Secilen rollerin bir kismi bulunamadi");
+  }
+
+  const currentRoleKeys = current.roles.map((membership) => membership.role.key);
+  const nextRoleKeys =
+    nextRoles?.map((role) => role.key) ?? current.roles.map((membership) => membership.role.key);
+
+  await assertLastAdminAccessIsPreserved({
+    currentIsActive: current.isActive,
+    currentRoleKeys,
+    nextIsActive: input.isActive ?? current.isActive,
+    nextRoleKeys,
+    userId: id,
+  });
+
+  const user = await prisma.user.update({
     where: { id },
     data: {
       displayName: input.fullName ?? current.displayName,
@@ -146,31 +148,18 @@ export async function updateUser(
       isActive: input.isActive ?? current.isActive,
       passwordHash: passwordHash ?? current.passwordHash,
       roles:
-        nextRoleIds === null
+        nextRoles === null
           ? undefined
           : {
               deleteMany: {},
-              create: nextRoleIds.map((roleId) => ({ roleId })),
+              create: nextRoles.map((role) => ({ roleId: role.id })),
             },
       username: input.username ?? current.username,
     },
-    include: {
-      roles: { include: { role: true } },
-      sessions: { orderBy: { lastSeenAt: "desc" }, take: 1 },
-    },
+    include: adminUserInclude,
   });
 
-  return {
-    email: user.email,
-    fullName: user.displayName,
-    id: user.id,
-    isActive: user.isActive,
-    lastLoginAt: user.sessions[0]?.lastSeenAt.toISOString() ?? null,
-    roleIds: user.roles.map((membership) => membership.roleId),
-    roleNames: user.roles.map((membership) => membership.role.key),
-    status: user.isActive ? "ACTIVE" : "PASSIVE",
-    username: user.username,
-  };
+  return toSettingsUser(user);
 }
 
 export async function listRoles() {

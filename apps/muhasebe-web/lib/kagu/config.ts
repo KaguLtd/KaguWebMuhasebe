@@ -55,6 +55,7 @@ export const accountKindOptions = [
 export const documentStatusOptions = [
   { label: "Taslak", value: "DRAFT" },
   { label: "Onayli", value: "APPROVED" },
+  { label: "Degistirildi", value: "SUPERSEDED" },
   { label: "Iptal", value: "VOID" },
 ];
 
@@ -314,6 +315,7 @@ export const settingsWorkspaceTabs: SettingsWorkspaceTab[] = [
     key: module.key,
     title: module.title,
   })),
+  { key: "periodLock", title: "Donem Kilidi" },
   { key: "settingsUsers", title: "Kullanicilar" },
   { key: "settingsRoles", title: "Roller" },
 ];

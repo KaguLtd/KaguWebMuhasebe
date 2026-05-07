@@ -143,6 +143,7 @@ export function getDocument(
   }
 
   return {
+    auditEvents: [],
     header: enrichHeader(header),
     lines: store.lines[entity].filter((line) => line[parentKey(entity)] === id),
     revisions: store.revisions.filter((row) => row.doc_id === id),
@@ -698,7 +699,9 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
 
     for (const line of lines) {
       store.stockMovements.push({
+        cancelledAt: null,
         id: randomUUID(),
+        isEffective: true,
         warehouseId: String(header.warehouse_id),
         itemId: String(line.item_id),
         projectId: nullableString(header.project_id),
@@ -708,6 +711,7 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
         docDate,
         qtyIn: stockDirection === "IN" ? number(line.quantity) : 0,
         qtyOut: stockDirection === "OUT" ? number(line.quantity) : 0,
+        replacedByDocId: null,
         createdAt,
       });
     }
@@ -720,8 +724,11 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
     const isSales = header.invoice_kind === "SALES";
 
     store.ledgerEntries.push({
+      cancelledAt: null,
       id: randomUUID(),
       accountId: String(header.account_id),
+      relatedAccountId: null,
+      isEffective: true,
       projectId: nullableString(header.project_id),
       docType,
       docId: String(header.id),
@@ -732,12 +739,15 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
       currency: currency(header.currency),
       description: isSales ? "Satis faturasi" : "Alis faturasi",
       createdAt,
+      replacedByDocId: null,
     });
 
     if (header.warehouse_id) {
       for (const line of lines.filter((line) => !hasDeliveryLink(line))) {
         store.stockMovements.push({
+          cancelledAt: null,
           id: randomUUID(),
+          isEffective: true,
           warehouseId: String(header.warehouse_id),
           itemId: String(line.item_id),
           projectId: nullableString(header.project_id),
@@ -747,6 +757,7 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
           docDate,
           qtyIn: isSales ? 0 : number(line.quantity),
           qtyOut: isSales ? number(line.quantity) : 0,
+          replacedByDocId: null,
           createdAt,
         });
       }
@@ -759,8 +770,11 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
     const isPayment = header.receipt_kind === "PAYMENT";
 
     store.ledgerEntries.push({
+      cancelledAt: null,
       id: randomUUID(),
       accountId: String(header.account_id),
+      relatedAccountId: null,
+      isEffective: true,
       projectId: nullableString(header.project_id),
       docType,
       docId: String(header.id),
@@ -771,6 +785,7 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
       currency: currency(header.currency),
       description: nullableString(header.description) ?? String(header.receipt_kind),
       createdAt,
+      replacedByDocId: null,
     });
 
     return;
@@ -778,8 +793,11 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
 
   store.ledgerEntries.push(
     {
+      cancelledAt: null,
       id: randomUUID(),
       accountId: String(header.from_account_id),
+      relatedAccountId: String(header.to_account_id),
+      isEffective: true,
       projectId: null,
       docType,
       docId: String(header.id),
@@ -790,10 +808,14 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
       currency: currency(header.currency),
       description: nullableString(header.description) ?? "Transfer out",
       createdAt,
+      replacedByDocId: null,
     },
     {
+      cancelledAt: null,
       id: randomUUID(),
       accountId: String(header.to_account_id),
+      relatedAccountId: String(header.from_account_id),
+      isEffective: true,
       projectId: null,
       docType,
       docId: String(header.id),
@@ -804,6 +826,7 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
       currency: currency(header.currency),
       description: nullableString(header.description) ?? "Transfer in",
       createdAt,
+      replacedByDocId: null,
     },
   );
 }

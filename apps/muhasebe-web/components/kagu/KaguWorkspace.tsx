@@ -35,6 +35,7 @@ import { useEffect, useState, useTransition } from "react";
 
 import { DocumentWorkspace } from "./DocumentWorkspace";
 import { MasterWorkspace } from "./MasterWorkspace";
+import { SettingsPeriodLockPanel } from "./SettingsPeriodLockPanel";
 import { SettingsUsersPanel } from "./SettingsUsersPanel";
 import {
   documentModules,
@@ -417,6 +418,9 @@ function SettingsPane({
       ) : null}
       {activeKey === "settingsUsers" ? <SettingsUsersPanel mode="users" /> : null}
       {activeKey === "settingsRoles" ? <SettingsUsersPanel mode="roles" /> : null}
+      {activeKey === "periodLock" ? (
+        <SettingsPeriodLockPanel onDataChanged={onDataChanged} />
+      ) : null}
     </Space>
   );
 }

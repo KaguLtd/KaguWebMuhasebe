@@ -26,6 +26,7 @@ export async function getDbDashboardTotals(): Promise<AppSnapshot["dashboard"]> 
     include: { lines: true },
     where: {
       docDate: { gte: dateFromString(monthStart) },
+      isEffective: true,
       invoiceKind: "SALES",
       status: "APPROVED",
     },
@@ -95,6 +96,7 @@ export async function getDbAccountStatementReport(
       orderBy: [{ docDate: "asc" }, { createdAt: "asc" }],
       where: {
         accountId,
+        isEffective: true,
         ...(dateFrom || dateTo
           ? {
               docDate: {
@@ -107,6 +109,7 @@ export async function getDbAccountStatementReport(
     })
   ).map((entry) => ({
     accountId: entry.accountId,
+    cancelledAt: entry.cancelledAt?.toISOString() ?? null,
     createdAt: entry.createdAt.toISOString(),
     creditMinor: entry.creditMinor,
     currency: currency(entry.currency),
@@ -117,7 +120,10 @@ export async function getDbAccountStatementReport(
     docNo: entry.docNo,
     docType: entry.docType,
     id: entry.id,
+    isEffective: entry.isEffective !== false,
     projectId: entry.projectId,
+    relatedAccountId: entry.relatedAccountId ?? null,
+    replacedByDocId: entry.replacedByDocId ?? null,
   }));
 
   for (const entry of entries) {
@@ -154,7 +160,7 @@ export async function getDbWarehouseInventoryReport(
 
   const movementSums = await prisma.stockMovement.groupBy({
     by: ["itemId"],
-    where: { warehouseId },
+    where: { isEffective: true, warehouseId },
     _sum: { qtyIn: true, qtyOut: true },
   });
   const quantityByItem = new Map(
@@ -214,19 +220,22 @@ export async function getDbItemMovementReport(
     await prisma.stockMovement.findMany({
       include: { warehouse: true },
       orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
-      where: { itemId },
+      where: { isEffective: true, itemId },
     })
   ).map((movement) => ({
+    cancelledAt: movement.cancelledAt?.toISOString() ?? null,
     createdAt: movement.createdAt.toISOString(),
     docDate: dateString(movement.docDate),
     docId: movement.docId,
     docNo: movement.docNo,
     docType: movement.docType,
     id: movement.id,
+    isEffective: movement.isEffective !== false,
     itemId: movement.itemId,
     projectId: movement.projectId,
     qtyIn: number(movement.qtyIn),
     qtyOut: number(movement.qtyOut),
+    replacedByDocId: movement.replacedByDocId ?? null,
     warehouseCode: text(movement.warehouse.code),
     warehouseId: movement.warehouseId,
     warehouseName: text(movement.warehouse.name),
@@ -252,6 +261,7 @@ async function getInventoryTotalsByCurrency() {
   const totals = emptyCurrencyTotals();
   const movementSums = await prisma.stockMovement.groupBy({
     by: ["itemId"],
+    where: { isEffective: true },
     _sum: { qtyIn: true, qtyOut: true },
   });
 
@@ -278,6 +288,7 @@ async function getInventoryTotalsByCurrency() {
 async function resolveLatestInventoryCost(itemId: string) {
   const purchaseInvoices = await prisma.invoice.findMany({
     where: {
+      isEffective: true,
       invoiceKind: "PURCHASE",
       status: "APPROVED",
     },
@@ -296,7 +307,7 @@ async function resolveLatestInventoryCost(itemId: string) {
     : [];
 
   const deliveryNotes = await prisma.deliveryNote.findMany({
-    where: { status: "APPROVED" },
+    where: { isEffective: true, status: "APPROVED" },
   });
   const deliveryNoteById = new Map(deliveryNotes.map((note) => [note.id, note]));
   const deliveryLines = deliveryNotes.length

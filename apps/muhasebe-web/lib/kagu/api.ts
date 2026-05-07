@@ -12,6 +12,7 @@ import type {
   LookupItem,
   MasterEntity,
   PaginatedResult,
+  PeriodLockConfig,
   SaveMasterPayload,
   SettingsRole,
   SettingsUser,
@@ -130,6 +131,21 @@ export async function voidDocumentRecord(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id, reason }),
+  });
+}
+
+export async function fetchPeriodLock() {
+  return fetchJson<PeriodLockConfig>(`/api/settings/period-lock`);
+}
+
+export async function savePeriodLock(payload: {
+  lockDate: string | null;
+  isActive: boolean;
+}) {
+  return fetchJson<PeriodLockConfig>(`/api/settings/period-lock`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 
