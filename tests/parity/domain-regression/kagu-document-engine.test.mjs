@@ -1,34 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
 
-const requireFromWebApp = createRequire(
-  new URL("../../apps/muhasebe-web/package.json", import.meta.url),
+import { loadKaguModules, resetKaguGlobals } from "../_support/load-kagu-modules.mjs";
+
+resetKaguGlobals();
+const { requireTemp } = loadKaguModules(
+  ["helpers.ts", "document-engine.ts"],
+  "kagu-engine-",
 );
-const ts = requireFromWebApp("typescript");
-const sourceDir = fileURLToPath(
-  new URL("../../apps/muhasebe-web/lib/kagu/", import.meta.url),
-);
-const tempDir = mkdtempSync(join(tmpdir(), "kagu-engine-"));
-
-for (const fileName of ["helpers.ts", "document-engine.ts"]) {
-  const source = readFileSync(join(sourceDir, fileName), "utf8");
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: {
-      esModuleInterop: true,
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-    },
-  });
-
-  writeFileSync(join(tempDir, fileName.replace(".ts", ".js")), compiled.outputText);
-}
-
-const engine = createRequire(join(tempDir, "document-engine.js"))("./document-engine.js");
+const engine = requireTemp("./document-engine.js");
 
 test("receipt approval posts a single account ledger entry and void unposts it", () => {
   const draft = engine.saveDocumentDraft("receipts", {

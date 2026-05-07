@@ -32,7 +32,6 @@ const masterEntities = new Set<MasterEntity>([
   "vatRates",
   "items",
 ]);
-let masterSeedPromise: Promise<void> | null = null;
 
 export function isDbMasterEntity(entity: string): entity is MasterEntity {
   return masterEntities.has(entity as MasterEntity);
@@ -41,8 +40,6 @@ export function isDbMasterEntity(entity: string): entity is MasterEntity {
 export async function getDbBootstrap(): Promise<AppSnapshot & {
   lookups: Partial<Record<LookupEntity, LookupItem[]>>;
 }> {
-  await ensureMasterSeeded();
-
   const [
     accountCount,
     itemCount,
@@ -88,8 +85,6 @@ export async function getDbBootstrap(): Promise<AppSnapshot & {
 }
 
 export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> {
-  await ensureMasterSeeded();
-
   if (entity === "vatRates") {
     const rows = await prisma.vatRate.findMany({ orderBy: { rateBps: "asc" } });
 
@@ -113,17 +108,14 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
   }
 
   if (entity === "projects") {
-    const [rows, accounts] = await Promise.all([
-      prisma.project.findMany({ orderBy: { code: "asc" } }),
-      prisma.account.findMany(),
-    ]);
-    const accountById = new Map(accounts.map((account) => [account.id, account]));
+    const rows = await prisma.project.findMany({
+      include: { account: true },
+      orderBy: { code: "asc" },
+    });
 
     return rows.map((row) => {
-      const account = accountById.get(row.accountId);
-
       return {
-        accountCode: account?.code ?? "",
+        accountCode: row.account.code,
         accountId: row.accountId,
         code: row.code,
         id: row.id,
@@ -133,15 +125,14 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
   }
 
   if (entity === "items") {
-    const [rows, vatRates] = await Promise.all([
-      prisma.item.findMany({ orderBy: { code: "asc" } }),
-      prisma.vatRate.findMany(),
-    ]);
-    const vatById = new Map(vatRates.map((vatRate) => [vatRate.id, vatRate]));
+    const rows = await prisma.item.findMany({
+      include: { defaultVatRate: true },
+      orderBy: { code: "asc" },
+    });
 
     return rows.map((row) => ({
       code: row.code,
-      defaultVatRateBps: vatById.get(row.defaultVatRateId)?.rateBps ?? 0,
+      defaultVatRateBps: row.defaultVatRate.rateBps,
       id: row.id,
       label: `${row.code} - ${row.name}`,
     }));
@@ -165,19 +156,114 @@ export async function listDbMasters(
   entity: MasterEntity,
   query: ListQuery = {},
 ): Promise<PaginatedResult<DataRecord>> {
-  await ensureMasterSeeded();
-
   const page = Math.max(1, Number(query.page ?? 1));
-  const pageSize = Math.min(100, Math.max(5, Number(query.pageSize ?? 20)));
-  const allRows = await listAllMasterRows(entity, query);
-  const filtered = filterMasterRows(entity, allRows, query);
-  const start = (page - 1) * pageSize;
+  const pageSize = Math.min(100, Math.max(1, Number(query.pageSize ?? 20)));
+  const skip = (page - 1) * pageSize;
+
+  if (entity === "accounts") {
+    const where = buildAccountWhere(query);
+    const [rows, total] = await Promise.all([
+      prisma.account.findMany({ orderBy: { code: "asc" }, skip, take: pageSize, where }),
+      prisma.account.count({ where }),
+    ]);
+
+    return {
+      items: await Promise.all(rows.map((row) => enrichRecord(entity, accountRecord(row)))),
+      page,
+      pageSize,
+      total,
+    };
+  }
+
+  if (entity === "projects") {
+    const where = buildProjectWhere(query);
+    const [rows, total] = await Promise.all([
+      prisma.project.findMany({
+        include: { account: true },
+        orderBy: { code: "asc" },
+        skip,
+        take: pageSize,
+        where,
+      }),
+      prisma.project.count({ where }),
+    ]);
+
+    return {
+      items: rows.map((row) => ({
+        ...projectRecord(row),
+        account_label: `${row.account.code} - ${row.account.name}`,
+      })),
+      page,
+      pageSize,
+      total,
+    };
+  }
+
+  if (entity === "warehouses") {
+    const where = buildWarehouseWhere(query);
+    const [rows, total] = await Promise.all([
+      prisma.warehouse.findMany({ orderBy: { code: "asc" }, skip, take: pageSize, where }),
+      prisma.warehouse.count({ where }),
+    ]);
+
+    return { items: rows.map(warehouseRecord), page, pageSize, total };
+  }
+
+  if (entity === "units") {
+    const where = buildNamedEntityWhere(query);
+    const [rows, total] = await Promise.all([
+      prisma.unit.findMany({ orderBy: { name: "asc" }, skip, take: pageSize, where }),
+      prisma.unit.count({ where }),
+    ]);
+
+    return { items: rows.map(unitRecord), page, pageSize, total };
+  }
+
+  if (entity === "itemClasses") {
+    const where = buildNamedEntityWhere(query);
+    const [rows, total] = await Promise.all([
+      prisma.itemClass.findMany({ orderBy: { name: "asc" }, skip, take: pageSize, where }),
+      prisma.itemClass.count({ where }),
+    ]);
+
+    return { items: rows.map(itemClassRecord), page, pageSize, total };
+  }
+
+  if (entity === "vatRates") {
+    const where = buildVatRateWhere(query);
+    const [rows, total] = await Promise.all([
+      prisma.vatRate.findMany({ orderBy: { rateBps: "asc" }, skip, take: pageSize, where }),
+      prisma.vatRate.count({ where }),
+    ]);
+
+    return { items: rows.map(vatRateRecord), page, pageSize, total };
+  }
+
+  const where = buildItemWhere(query);
+  const [rows, total] = await Promise.all([
+    prisma.item.findMany({
+      include: { defaultVatRate: true, itemClass: true, unit: true },
+      orderBy: { code: "asc" },
+      skip,
+      take: pageSize,
+      where,
+    }),
+    prisma.item.count({ where }),
+  ]);
 
   return {
-    items: filtered.slice(start, start + pageSize),
+    items: await Promise.all(
+      rows.map(async (row) => ({
+        ...itemRecord(row),
+        class_label: row.itemClass.name,
+        default_vat_rate_bps: row.defaultVatRate.rateBps,
+        total_stock: await getItemStockQuantity(row.id),
+        unit_label: row.unit.name,
+      })),
+    ),
     page,
     pageSize,
-    total: filtered.length,
+    total,
   };
 }
 
@@ -320,132 +406,7 @@ async function suggestNextCodeWithTx(
 }
 
 async function ensureMasterSeeded() {
-  if (process.env.KAGU_AUTO_SEED === "false") {
-    return;
-  }
-
-  masterSeedPromise ??= seedMissingMasterData().catch((error: unknown) => {
-    masterSeedPromise = null;
-    throw error;
-  });
-
-  await masterSeedPromise;
-}
-
-async function seedMissingMasterData() {
-  await prisma.$transaction(async (tx) => {
-    await tx.unit.createMany({
-      data: [
-        { id: "unit-adet", name: "ADET" },
-        { id: "unit-kg", name: "KG" },
-        { id: "unit-m", name: "METRE" },
-      ],
-      skipDuplicates: true,
-    });
-    await tx.itemClass.createMany({
-      data: [
-        { id: "class-hammadde", name: "Hammadde" },
-        { id: "class-mamul", name: "Mamul" },
-        { id: "class-yardimci", name: "Yardimci Malzeme" },
-      ],
-      skipDuplicates: true,
-    });
-    await tx.vatRate.createMany({
-      data: [
-        { id: "vat-0", rateBps: 0 },
-        { id: "vat-10", rateBps: 1000 },
-        { id: "vat-20", rateBps: 2000 },
-      ],
-      skipDuplicates: true,
-    });
-    await tx.warehouse.createMany({
-      data: [
-        { code: "DEP.001", id: "warehouse-main", isActive: true, name: "Merkez Depo" },
-        {
-          code: "DEP.002",
-          id: "warehouse-production",
-          isActive: true,
-          name: "Uretim Deposu",
-        },
-      ],
-      skipDuplicates: true,
-    });
-    await tx.account.createMany({
-      data: [
-        {
-          accountKind: "CUSTOMER",
-          code: "120.MUS.001",
-          currency: "TRY",
-          id: "account-customer-1",
-          isActive: true,
-          name: "Kagu Musteri A.S.",
-        },
-        {
-          accountKind: "SUPPLIER",
-          code: "320.TED.001",
-          currency: "TRY",
-          id: "account-supplier-1",
-          isActive: true,
-          name: "Tedarikci Ornek Ltd.",
-        },
-      ],
-      skipDuplicates: true,
-    });
-    await tx.project.createMany({
-      data: [
-        {
-          accountId: "account-customer-1",
-          code: "PRJ.001",
-          id: "project-web",
-          isActive: true,
-          name: "Web Donusum",
-        },
-        {
-          accountId: "account-customer-1",
-          code: "PRJ.002",
-          id: "project-service",
-          isActive: true,
-          name: "Servis Operasyon",
-        },
-      ],
-      skipDuplicates: true,
-    });
-    await tx.item.createMany({
-      data: [
-        {
-          classId: "class-mamul",
-          code: "MML_MLZ_001",
-          defaultVatRateId: "vat-20",
-          id: "item-erp-service",
-          isActive: true,
-          name: "ERP Hizmet Kalemi",
-          unitId: "unit-adet",
-        },
-        {
-          classId: "class-hammadde",
-          code: "HMA_MLZ_001",
-          defaultVatRateId: "vat-20",
-          id: "item-raw-steel",
-          isActive: true,
-          name: "Sac Hammadde",
-          totalStock: 1420.5,
-          unitId: "unit-kg",
-        },
-      ],
-      skipDuplicates: true,
-    });
-  });
-}
-
-async function listAllMasterRows(entity: MasterEntity, query: ListQuery) {
-  const records = await listAllSimple(entity);
-  const enriched = await Promise.all(records.map((record) => enrichRecord(entity, record)));
-
-  if (query.accountId) {
-    return enriched.filter((record) => record.account_id === query.accountId);
-  }
-
-  return enriched;
+  return;
 }
 
 async function listAllSimple(entity: MasterEntity): Promise<DataRecord[]> {
@@ -646,33 +607,6 @@ async function deleteMasterRecord(entity: MasterEntity, id: string) {
   }
 }
 
-function filterMasterRows(
-  entity: MasterEntity,
-  rows: DataRecord[],
-  query: ListQuery,
-) {
-  let filtered = rows;
-  const search = normalize(query.search);
-
-  if (query.status === "ACTIVE") {
-    filtered = filtered.filter((record) => record.is_active !== false);
-  }
-
-  if (query.status === "PASSIVE") {
-    filtered = filtered.filter((record) => record.is_active === false);
-  }
-
-  if (search) {
-    filtered = filtered.filter((record) =>
-      Object.values(record).some((value) => normalize(String(value)).includes(search)),
-    );
-  }
-
-  return entity === "vatRates"
-    ? filtered.toSorted((left, right) => number(left.rate_bps) - number(right.rate_bps))
-    : filtered;
-}
-
 async function enrichRecord(entity: MasterEntity, record: DataRecord): Promise<DataRecord> {
   const enriched = { ...record };
 
@@ -746,6 +680,118 @@ async function getItemStockQuantity(itemId: string) {
   ]);
 
   return number(qtyIn._sum.qtyIn) - number(qtyOut._sum.qtyOut);
+}
+
+function buildAccountWhere(query: ListQuery): Prisma.AccountWhereInput {
+  const search = normalizedSearch(query.search);
+  const where: Prisma.AccountWhereInput = {};
+
+  if (query.status === "ACTIVE") {
+    where.isActive = true;
+  } else if (query.status === "PASSIVE") {
+    where.isActive = false;
+  }
+
+  if (search) {
+    where.OR = [
+      { code: { contains: search, mode: "insensitive" } },
+      { name: { contains: search, mode: "insensitive" } },
+    ];
+  }
+
+  return where;
+}
+
+function buildProjectWhere(query: ListQuery): Prisma.ProjectWhereInput {
+  const search = normalizedSearch(query.search);
+  const where: Prisma.ProjectWhereInput = {};
+
+  if (query.accountId) {
+    where.accountId = query.accountId;
+  }
+
+  if (query.status === "ACTIVE") {
+    where.isActive = true;
+  } else if (query.status === "PASSIVE") {
+    where.isActive = false;
+  }
+
+  if (search) {
+    where.OR = [
+      { code: { contains: search, mode: "insensitive" } },
+      { name: { contains: search, mode: "insensitive" } },
+      { account: { code: { contains: search, mode: "insensitive" } } },
+      { account: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+
+  return where;
+}
+
+function buildWarehouseWhere(query: ListQuery): Prisma.WarehouseWhereInput {
+  const search = normalizedSearch(query.search);
+  const where: Prisma.WarehouseWhereInput = {};
+
+  if (query.status === "ACTIVE") {
+    where.isActive = true;
+  } else if (query.status === "PASSIVE") {
+    where.isActive = false;
+  }
+
+  if (search) {
+    where.OR = [
+      { code: { contains: search, mode: "insensitive" } },
+      { name: { contains: search, mode: "insensitive" } },
+    ];
+  }
+
+  return where;
+}
+
+function buildNamedEntityWhere(query: ListQuery): { name?: { contains: string; mode: "insensitive" } } {
+  const search = normalizedSearch(query.search);
+
+  return search ? { name: { contains: search, mode: "insensitive" } } : {};
+}
+
+function buildVatRateWhere(query: ListQuery): Prisma.VatRateWhereInput {
+  const search = normalizedSearch(query.search);
+
+  if (!search) {
+    return {};
+  }
+
+  const numeric = Number(search.replace(",", "."));
+
+  return Number.isFinite(numeric)
+    ? { rateBps: Math.round(numeric * 100) }
+    : {};
+}
+
+function buildItemWhere(query: ListQuery): Prisma.ItemWhereInput {
+  const search = normalizedSearch(query.search);
+  const where: Prisma.ItemWhereInput = {};
+
+  if (query.status === "ACTIVE") {
+    where.isActive = true;
+  } else if (query.status === "PASSIVE") {
+    where.isActive = false;
+  }
+
+  if (search) {
+    where.OR = [
+      { code: { contains: search, mode: "insensitive" } },
+      { name: { contains: search, mode: "insensitive" } },
+      { itemClass: { name: { contains: search, mode: "insensitive" } } },
+      { unit: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+
+  return where;
+}
+
+function normalizedSearch(value: string | undefined) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function normalizePayload(entity: MasterEntity, payload: SaveMasterPayload) {
@@ -968,10 +1014,4 @@ function itemRecord(row: {
     unit_id: row.unitId,
     updated_at: isoString(row.updatedAt),
   };
-}
-
-function normalize(value: unknown) {
-  return String(value ?? "")
-    .toLocaleLowerCase("tr-TR")
-    .trim();
 }

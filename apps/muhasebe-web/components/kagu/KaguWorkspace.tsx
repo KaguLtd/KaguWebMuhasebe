@@ -35,14 +35,18 @@ import { useEffect, useState, useTransition } from "react";
 
 import { DocumentWorkspace } from "./DocumentWorkspace";
 import { MasterWorkspace } from "./MasterWorkspace";
+import { SettingsUsersPanel } from "./SettingsUsersPanel";
 import {
   documentModules,
+  type DocumentModuleConfig,
+  type MasterModuleConfig,
   primaryMasterModules,
   settingsMasterModules,
+  settingsWorkspaceTabs,
   workspaceMenu,
 } from "@/lib/kagu/config";
 import type { BootstrapPayload } from "@/lib/kagu/api";
-import { fetchBootstrap } from "@/lib/kagu/api";
+import { fetchBootstrap, fetchLookups, logoutSession } from "@/lib/kagu/api";
 import type { LookupEntity, LookupItem } from "@/lib/kagu/contracts";
 import { formatMinor } from "@/lib/kagu/helpers";
 
@@ -63,7 +67,14 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [lookups, setLookups] = useState<LookupMap>({});
   const [loading, setLoading] = useState(true);
+  const [lookupLoading, setLookupLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const masterModule = primaryMasterModules.find((module) => module.key === activeMenu);
+  const documentModule = documentModules.find((module) => module.key === activeMenu);
+  const settingsModule =
+    activeMenu === "settings"
+      ? settingsMasterModules.find((module) => module.key === settingsMenu)
+      : undefined;
 
   useEffect(() => {
     void reloadBootstrap();
@@ -76,7 +87,6 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
 
         setBootstrap(payload);
         setBootstrapError(null);
-        setLookups(payload.lookups);
       } catch (error) {
         setBootstrap(null);
         setBootstrapError(
@@ -95,13 +105,80 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
 
       setBootstrap(payload);
       setBootstrapError(null);
-      setLookups(payload.lookups);
     } catch (error) {
       setBootstrapError(
         error instanceof Error ? error.message : "Bootstrap verisi alinamadi",
       );
     }
   }
+
+  useEffect(() => {
+    if (loading || bootstrapError) {
+      return;
+    }
+
+    const requiredEntities = resolveRequiredLookups({
+      activeMenu,
+      documentModule,
+      masterModule,
+      settingsMenu,
+      settingsModule,
+    });
+    const missingEntities = requiredEntities.filter((entity) => !lookups[entity]);
+
+    if (!missingEntities.length) {
+      return;
+    }
+
+    let active = true;
+
+    void (async () => {
+      setLookupLoading(true);
+
+      try {
+        const entries = await Promise.all(
+          missingEntities.map(async (entity) => [entity, await fetchLookups(entity)] as const),
+        );
+
+        if (!active) {
+          return;
+        }
+
+        setLookups((current) => {
+          const next = { ...current };
+
+          for (const [entity, items] of entries) {
+            next[entity] = items;
+          }
+
+          return next;
+        });
+      } catch (error) {
+        if (active) {
+          setBootstrapError(
+            error instanceof Error ? error.message : "Lookup verisi alinamadi",
+          );
+        }
+      } finally {
+        if (active) {
+          setLookupLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    activeMenu,
+    bootstrapError,
+    documentModule,
+    loading,
+    lookups,
+    masterModule,
+    settingsMenu,
+    settingsModule,
+  ]);
 
   function handleMenu(key: string) {
     startTransition(() => {
@@ -110,8 +187,16 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
     });
   }
 
-  const masterModule = primaryMasterModules.find((module) => module.key === activeMenu);
-  const documentModule = documentModules.find((module) => module.key === activeMenu);
+  function handleLogout() {
+    startTransition(async () => {
+      try {
+        await logoutSession();
+      } finally {
+        router.push("/login");
+        router.refresh();
+      }
+    });
+  }
 
   return (
     <ConfigProvider
@@ -164,7 +249,7 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
             <Header className="kagu-header">
               <div>
                 <Typography.Text className="kagu-header-eyebrow">
-                  KAGU-ERP-D1 parity workspace
+                  KAGU muhasebe operasyon merkezi
                 </Typography.Text>
                 <Typography.Title level={4} style={{ color: "white", margin: 0 }}>
                   {workspaceMenu.find((item) => item.key === activeMenu)?.title}
@@ -172,14 +257,12 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
               </div>
               <Space wrap>
                 <Link href="/docs">
-                  <Button>Dokumantasyon</Button>
+                  <Button>Dokumanlar</Button>
                 </Link>
                 <Link href="/intake">
-                  <Button>Legacy Intake</Button>
+                  <Button>Kaynak Inceleme</Button>
                 </Link>
-                <form action="/api/auth/sign-out" method="post">
-                  <Button htmlType="submit">Cikis</Button>
-                </form>
+                <Button onClick={handleLogout}>Cikis</Button>
               </Space>
             </Header>
             <Content className="kagu-content">
@@ -187,6 +270,13 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
                 <div className="kagu-loader">
                   <Spin />
                 </div>
+              ) : null}
+              {!loading && lookupLoading && activeMenu !== "dashboard" ? (
+                <Alert
+                  description="Bu ekran icin gerekli referans listeleri yalnizca ihtiyac duyuldugunda yukleniyor."
+                  showIcon
+                  type="info"
+                />
               ) : null}
               {!loading && bootstrapError ? (
                 <Alert
@@ -281,9 +371,9 @@ function DashboardPane({ bootstrap }: { bootstrap: BootstrapPayload | null }) {
       </Row>
       <Card className="kagu-card" title="Faz Durumu">
         <Alert
-          description="Master data, belge taslak/onay/iptal akisi, belge numaralari, ledger entry, stock movement, rapor snapshot ve cari ekstre artik Prisma repository katmani uzerinden PostgreSQL source of truth mantigiyla calisir."
+          description="Master data, belge akislari ve rapor gosterimleri ayni veri modeli uzerinden ilerler. Web paneli ayarlar, operasyon ve belge ekranlarini ortak oturum mantiginda toplar."
           showIcon
-          title="PostgreSQL persistence aktif"
+          title="Operasyon verisi merkezi olarak sunuluyor"
           type="info"
         />
       </Card>
@@ -302,35 +392,37 @@ function SettingsPane({
   onChange: (key: string) => void;
   onDataChanged: () => void;
 }) {
-  const activeModule =
-    settingsMasterModules.find((module) => module.key === activeKey) ??
-    settingsMasterModules[0];
+  const activeModule = settingsMasterModules.find((module) => module.key === activeKey);
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Card className="kagu-card">
         <Tabs
-          activeKey={activeModule.key}
-          items={settingsMasterModules.map((module) => ({
+          activeKey={activeKey}
+          items={settingsWorkspaceTabs.map((module) => ({
             key: module.key,
             label: module.title,
           }))}
           onChange={onChange}
         />
       </Card>
-      <MasterWorkspace
-        compact
-        config={activeModule}
-        key={activeModule.key}
-        lookups={lookups}
-        onDataChanged={onDataChanged}
-      />
+      {activeModule ? (
+        <MasterWorkspace
+          compact
+          config={activeModule}
+          key={activeModule.key}
+          lookups={lookups}
+          onDataChanged={onDataChanged}
+        />
+      ) : null}
+      {activeKey === "settingsUsers" ? <SettingsUsersPanel mode="users" /> : null}
+      {activeKey === "settingsRoles" ? <SettingsUsersPanel mode="roles" /> : null}
     </Space>
   );
 }
 
 function resolveInitialMenu(value: string) {
-  if (settingsMasterModules.some((module) => module.key === value)) {
+  if (settingsWorkspaceTabs.some((module) => module.key === value)) {
     return "settings";
   }
 
@@ -338,9 +430,55 @@ function resolveInitialMenu(value: string) {
 }
 
 function resolveInitialSettingsMenu(value: string) {
-  return settingsMasterModules.some((module) => module.key === value)
+  return settingsWorkspaceTabs.some((module) => module.key === value)
     ? value
-    : settingsMasterModules[0].key;
+    : settingsWorkspaceTabs[0].key;
+}
+
+function resolveRequiredLookups({
+  activeMenu,
+  documentModule,
+  masterModule,
+  settingsMenu,
+  settingsModule,
+}: {
+  activeMenu: string;
+  documentModule?: DocumentModuleConfig;
+  masterModule?: MasterModuleConfig;
+  settingsMenu: string;
+  settingsModule?: MasterModuleConfig;
+}) {
+  if (activeMenu === "dashboard") {
+    return [] as LookupEntity[];
+  }
+
+  if (masterModule) {
+    return uniqueLookups(masterModule.fields.map((field) => field.lookupEntity));
+  }
+
+  if (documentModule) {
+    return uniqueLookups([
+      ...documentModule.headerFields.map((field) => field.lookupEntity),
+      ...(documentModule.lineFields ?? []).map((field) => field.lookupEntity),
+      ...(documentModule.filterLookups ?? []),
+    ]);
+  }
+
+  if (activeMenu === "settings" && settingsModule) {
+    return uniqueLookups(settingsModule.fields.map((field) => field.lookupEntity));
+  }
+
+  if (activeMenu === "settings" && settingsMenu.startsWith("settings")) {
+    return [] as LookupEntity[];
+  }
+
+  return [] as LookupEntity[];
+}
+
+function uniqueLookups(entities: Array<LookupEntity | undefined>) {
+  return Array.from(
+    new Set(entities.filter((entity): entity is LookupEntity => Boolean(entity))),
+  );
 }
 
 const iconByKey: Record<string, ReactNode> = {

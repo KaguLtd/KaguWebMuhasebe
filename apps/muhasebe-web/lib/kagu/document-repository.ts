@@ -72,16 +72,66 @@ export async function listDbDocuments(
   query: ListQuery = {},
 ): Promise<PaginatedResult<DataRecord>> {
   const page = Math.max(1, Number(query.page ?? 1));
-  const pageSize = Math.min(100, Math.max(5, Number(query.pageSize ?? 20)));
-  const rows = await filterDocumentRows(entity, await listAllHeaders(entity), query);
-  const start = (page - 1) * pageSize;
+  const pageSize = Math.min(100, Math.max(1, Number(query.pageSize ?? 20)));
+  const skip = (page - 1) * pageSize;
 
-  return {
-    items: rows.slice(start, start + pageSize),
-    page,
-    pageSize,
-    total: rows.length,
-  };
+  if (entity === "deliveryNotes") {
+    const where = buildDeliveryNoteWhere(query);
+    const [rows, total] = await Promise.all([
+      prisma.deliveryNote.findMany({
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize,
+        where,
+      }),
+      prisma.deliveryNote.count({ where }),
+    ]);
+
+    return { items: rows.map(deliveryHeaderRecord), page, pageSize, total };
+  }
+
+  if (entity === "invoices") {
+    const where = buildInvoiceWhere(query);
+    const [rows, total] = await Promise.all([
+      prisma.invoice.findMany({
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize,
+        where,
+      }),
+      prisma.invoice.count({ where }),
+    ]);
+
+    return { items: rows.map(invoiceRecord), page, pageSize, total };
+  }
+
+  if (entity === "receipts") {
+    const where = buildReceiptWhere(query);
+    const [rows, total] = await Promise.all([
+      prisma.receipt.findMany({
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize,
+        where,
+      }),
+      prisma.receipt.count({ where }),
+    ]);
+
+    return { items: rows.map(receiptRecord), page, pageSize, total };
+  }
+
+  const where = buildTransferWhere(query);
+  const [rows, total] = await Promise.all([
+    prisma.transfer.findMany({
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: pageSize,
+      where,
+    }),
+    prisma.transfer.count({ where }),
+  ]);
+
+  return { items: rows.map(transferRecord), page, pageSize, total };
 }
 
 export async function getDbDocument(
@@ -314,19 +364,6 @@ async function getDocumentWithTx(
   ]);
 
   return { header, ledgerEntries, lines, revisions, stockMovements };
-}
-
-async function listAllHeaders(entity: DocumentEntity) {
-  switch (entity) {
-    case "deliveryNotes":
-      return (await prisma.deliveryNote.findMany()).map(deliveryHeaderRecord);
-    case "invoices":
-      return (await prisma.invoice.findMany()).map(invoiceRecord);
-    case "receipts":
-      return (await prisma.receipt.findMany()).map(receiptRecord);
-    case "transfers":
-      return (await prisma.transfer.findMany()).map(transferRecord);
-  }
 }
 
 async function findHeader(tx: Tx, entity: DocumentEntity, id: string) {
@@ -1098,80 +1135,186 @@ async function recordAudit(
   });
 }
 
-async function filterDocumentRows(
-  entity: DocumentEntity,
-  rows: DataRecord[],
-  query: ListQuery,
-) {
-  const search = normalize(query.search);
-  let filtered = rows;
+function buildDeliveryNoteWhere(query: ListQuery): Prisma.DeliveryNoteWhereInput {
+  const search = normalizedSearch(query.search);
+  const where: Prisma.DeliveryNoteWhereInput = {};
 
   if (query.status) {
-    filtered = filtered.filter((row) => row.status === query.status);
+    where.status = dbDocumentStatus(query.status);
   }
 
-  if (query.accountId && ["deliveryNotes", "invoices", "receipts"].includes(entity)) {
-    filtered = filtered.filter((row) => row.account_id === query.accountId);
+  if (query.accountId) {
+    where.accountId = query.accountId;
   }
 
-  if (query.accountId && entity === "transfers") {
-    filtered = filtered.filter(
-      (row) =>
-        row.from_account_id === query.accountId || row.to_account_id === query.accountId,
-    );
+  if (query.projectId) {
+    where.projectId = query.projectId;
   }
 
-  if (query.projectId && ["deliveryNotes", "invoices", "receipts"].includes(entity)) {
-    filtered = filtered.filter((row) => row.project_id === query.projectId);
+  if (query.warehouseId) {
+    where.warehouseId = query.warehouseId;
   }
 
-  if (query.warehouseId && ["deliveryNotes", "invoices"].includes(entity)) {
-    filtered = filtered.filter((row) => row.warehouse_id === query.warehouseId);
+  if (query.direction) {
+    where.direction = dbDeliveryDirection(query.direction);
   }
 
-  if (query.direction && entity === "deliveryNotes") {
-    filtered = filtered.filter((row) => row.direction === query.direction);
-  }
+  applyDateRange(where, query);
 
-  if (
-    entity === "deliveryNotes" &&
-    (query.invoiceState || query.onlyOpenForInvoicing)
-  ) {
-    const invoicedDeliveryNoteIds = await getInvoicedDeliveryNoteIds(prisma as unknown as Tx);
+  if (query.invoiceState === "INVOICED") {
+    where.lines = { some: { invoiceLines: { some: {} } } };
+  } else if (query.invoiceState === "UNINVOICED" || query.onlyOpenForInvoicing) {
+    where.NOT = { lines: { some: { invoiceLines: { some: {} } } } };
 
-    if (query.invoiceState === "INVOICED") {
-      filtered = filtered.filter((row) => invoicedDeliveryNoteIds.has(String(row.id)));
+    if (query.onlyOpenForInvoicing) {
+      where.status = DbDocumentStatus.APPROVED;
     }
-
-    if (query.invoiceState === "UNINVOICED" || query.onlyOpenForInvoicing) {
-      filtered = filtered.filter(
-        (row) =>
-          row.status === "APPROVED" && !invoicedDeliveryNoteIds.has(String(row.id)),
-      );
-    }
-  }
-
-  if (query.invoiceKind && entity === "invoices") {
-    filtered = filtered.filter((row) => row.invoice_kind === query.invoiceKind);
-  }
-
-  if (query.dateFrom) {
-    filtered = filtered.filter((row) => String(row.doc_date) >= String(query.dateFrom));
-  }
-
-  if (query.dateTo) {
-    filtered = filtered.filter((row) => String(row.doc_date) <= String(query.dateTo));
   }
 
   if (search) {
-    filtered = filtered.filter((row) =>
-      Object.values(row).some((value) => normalize(String(value)).includes(search)),
-    );
+    where.OR = [
+      { docNo: { contains: search, mode: "insensitive" } },
+      { actualDocNo: { contains: search, mode: "insensitive" } },
+      { description: { contains: search, mode: "insensitive" } },
+      { account: { code: { contains: search, mode: "insensitive" } } },
+      { account: { name: { contains: search, mode: "insensitive" } } },
+    ];
   }
 
-  return filtered.toSorted((left, right) =>
-    String(right.created_at).localeCompare(String(left.created_at)),
-  );
+  return where;
+}
+
+function buildInvoiceWhere(query: ListQuery): Prisma.InvoiceWhereInput {
+  const search = normalizedSearch(query.search);
+  const where: Prisma.InvoiceWhereInput = {};
+
+  if (query.status) {
+    where.status = dbDocumentStatus(query.status);
+  }
+
+  if (query.accountId) {
+    where.accountId = query.accountId;
+  }
+
+  if (query.projectId) {
+    where.projectId = query.projectId;
+  }
+
+  if (query.warehouseId) {
+    where.warehouseId = query.warehouseId;
+  }
+
+  if (query.invoiceKind) {
+    where.invoiceKind = dbInvoiceKind(query.invoiceKind);
+  }
+
+  applyDateRange(where, query);
+
+  if (search) {
+    where.OR = [
+      { docNo: { contains: search, mode: "insensitive" } },
+      { actualDocNo: { contains: search, mode: "insensitive" } },
+      { description: { contains: search, mode: "insensitive" } },
+      { account: { code: { contains: search, mode: "insensitive" } } },
+      { account: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+
+  return where;
+}
+
+function buildReceiptWhere(query: ListQuery): Prisma.ReceiptWhereInput {
+  const search = normalizedSearch(query.search);
+  const where: Prisma.ReceiptWhereInput = {};
+
+  if (query.status) {
+    where.status = dbDocumentStatus(query.status);
+  }
+
+  if (query.accountId) {
+    where.accountId = query.accountId;
+  }
+
+  if (query.projectId) {
+    where.projectId = query.projectId;
+  }
+
+  applyDateRange(where, query);
+
+  if (search) {
+    where.OR = [
+      { docNo: { contains: search, mode: "insensitive" } },
+      { description: { contains: search, mode: "insensitive" } },
+      { account: { code: { contains: search, mode: "insensitive" } } },
+      { account: { name: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+
+  return where;
+}
+
+function buildTransferWhere(query: ListQuery): Prisma.TransferWhereInput {
+  const search = normalizedSearch(query.search);
+  const where: Prisma.TransferWhereInput = {};
+
+  if (query.status) {
+    where.status = dbDocumentStatus(query.status);
+  }
+
+  if (query.accountId) {
+    where.OR = [{ fromAccountId: query.accountId }, { toAccountId: query.accountId }];
+  }
+
+  if (query.projectId) {
+    where.projectId = query.projectId;
+  }
+
+  applyDateRange(where, query);
+
+  if (search) {
+    const searchOr: Prisma.TransferWhereInput[] = [
+      { docNo: { contains: search, mode: "insensitive" } },
+      { description: { contains: search, mode: "insensitive" } },
+      { fromAccount: { code: { contains: search, mode: "insensitive" } } },
+      { fromAccount: { name: { contains: search, mode: "insensitive" } } },
+      { toAccount: { code: { contains: search, mode: "insensitive" } } },
+      { toAccount: { name: { contains: search, mode: "insensitive" } } },
+    ];
+
+    where.AND = where.OR
+      ? [{ OR: where.OR as Prisma.TransferWhereInput[] }, { OR: searchOr }]
+      : [{ OR: searchOr }];
+    delete where.OR;
+  }
+
+  return where;
+}
+
+function applyDateRange(
+  where:
+    | Prisma.DeliveryNoteWhereInput
+    | Prisma.InvoiceWhereInput
+    | Prisma.ReceiptWhereInput
+    | Prisma.TransferWhereInput,
+  query: ListQuery,
+) {
+  if (!query.dateFrom && !query.dateTo) {
+    return;
+  }
+
+  where.docDate = {};
+
+  if (query.dateFrom) {
+    where.docDate.gte = toDate(query.dateFrom);
+  }
+
+  if (query.dateTo) {
+    where.docDate.lte = toDate(query.dateTo);
+  }
+}
+
+function normalizedSearch(value: string | undefined) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function defaultsFor(entity: DocumentEntity): DataRecord {
@@ -1759,10 +1902,4 @@ function nullableNumber(value: unknown) {
 
 function draftDocNo(id: string) {
   return `DRAFT-${id.slice(0, 8).toUpperCase()}`;
-}
-
-function normalize(value: unknown) {
-  return String(value ?? "")
-    .toLocaleLowerCase("tr-TR")
-    .trim();
 }

@@ -29,7 +29,21 @@ Bu klasor, KAGU ERP masaustu uygulamasinin web yeniden insasi icin ana referans 
 | `DATA_MIGRATION.md` | Veri tasima ve dogrulama plani |
 | `DEPLOYMENT.md` | Production dagitim ve operasyon notlari |
 
+## DevOps Surface
+
+| Dosya | Amac |
+| --- | --- |
+| `../scripts/README.md` | Root script contract'i ve evidence refresh akisi |
+| `.github/workflows/docs-devops.yml` | Docs/devops surface CI contract'i |
+
 ## Su Anki En Buyuk Blokaj
 
 - Legacy masaustu uygulama kaynaklari bu repoda bulunmuyor.
 - Bu nedenle parity ve finansal davranis cikarimi ancak `legacy/` klasoru doldurulduktan sonra derinlestirilebilir.
+
+## Evidence Yorumu
+
+- `LEGACY_INVENTORY.md` ve `LEGACY_READYNESS.md` doluluk ve capture coverage
+  snapshot'idir; parity kabul kaydi degildir.
+- `tests/parity/README.md` altindaki test stratejisi, evidence gelmeden
+  "acceptance parity" iddiasi uretmemelidir.

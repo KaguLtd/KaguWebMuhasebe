@@ -4,7 +4,9 @@ import { getDbBootstrap } from "@/lib/kagu/master-repository";
 
 export async function GET() {
   try {
-    return NextResponse.json(await getDbBootstrap());
+    const payload = await getDbBootstrap();
+
+    return NextResponse.json({ ...payload, lookups: {} });
   } catch (error) {
     console.error("Bootstrap failed", error);
 

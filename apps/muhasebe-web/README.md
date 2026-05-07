@@ -27,6 +27,9 @@ icin hazirlanan Next.js iskeletidir.
 npm run dev
 ```
 
+Repo root'undan ayni sunucuyu baslatmak icin `npm run dev` komutu da
+kullanilabilir.
+
 Varsayilan akis:
 
 - `/` kullaniciyi oturum durumuna gore `/login` veya `/dashboard` sayfasina yonlendirir.
@@ -52,4 +55,11 @@ Workspace seviyesinde legacy doluluk raporu almak icin root klasorde:
 
 ```bash
 npm run legacy:inventory:write
+```
+
+Workspace contract'i ile uyumlu root kontroller:
+
+```bash
+npm run verify
+npm run production:check
 ```

@@ -1,34 +1,20 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import {
-  isPlaceholderAuthEnabled,
-  PLACEHOLDER_SESSION_COOKIE,
-} from "@/lib/auth/session";
+import { loginWithPassword, logoutCurrentSession } from "@/lib/auth/server";
+import { HttpError } from "@/lib/http/errors";
 
-export async function signInPlaceholder() {
-  if (!isPlaceholderAuthEnabled()) {
-    redirect("/login?auth=locked");
+export async function signIn(username: string, password: string) {
+  if (!username.trim() || !password.trim()) {
+    throw new HttpError(400, "Kullanici adi ve sifre zorunludur");
   }
 
-  const cookieStore = await cookies();
-
-  cookieStore.set(PLACEHOLDER_SESSION_COOKIE, "active", {
-    httpOnly: true,
-    path: "/",
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60,
-  });
-
+  await loginWithPassword(username.trim(), password);
   redirect("/dashboard");
 }
 
-export async function signOutPlaceholder() {
-  const cookieStore = await cookies();
-
-  cookieStore.delete(PLACEHOLDER_SESSION_COOKIE);
+export async function signOut() {
+  await logoutCurrentSession();
   redirect("/login");
 }

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { requireSessionUser } from "@/lib/auth/server";
+import { jsonBadRequest } from "@/lib/http/response";
+import { parseJsonObject, requireStringId } from "@/lib/http/validation";
 import {
   isDbDocumentEntity,
   voidDbDocument,
@@ -10,24 +13,24 @@ type RouteContext = {
 };
 
 export async function POST(request: Request, context: RouteContext) {
-  const { entity } = await context.params;
-
-  if (!isDbDocumentEntity(entity)) {
-    return NextResponse.json({ error: "Unknown document entity" }, { status: 404 });
-  }
-
   try {
-    const payload = (await request.json()) as { id?: string; reason?: string };
+    await requireSessionUser();
+    const { entity } = await context.params;
 
-    if (!payload.id) {
-      return NextResponse.json({ error: "Document id is required" }, { status: 400 });
+    if (!isDbDocumentEntity(entity)) {
+      return NextResponse.json({ error: "Unknown document entity" }, { status: 404 });
     }
 
-    return NextResponse.json(await voidDbDocument(entity, payload.id, payload.reason ?? ""));
-  } catch (error) {
+    const payload = await parseJsonObject(request);
+
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Void failed" },
-      { status: 400 },
+      await voidDbDocument(
+        entity,
+        requireStringId(payload.id, "Document id is required"),
+        typeof payload.reason === "string" ? payload.reason : "",
+      ),
     );
+  } catch (error) {
+    return jsonBadRequest(error, "Void failed");
   }
 }

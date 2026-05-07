@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-import type { DocumentPayload } from "@/lib/kagu/contracts";
+import { requireSessionUser } from "@/lib/auth/server";
+import { jsonBadRequest } from "@/lib/http/response";
+import { parseDocumentPayload } from "@/lib/http/validation";
 import {
   isDbDocumentEntity,
   saveDbDocumentDraft,
@@ -11,22 +13,18 @@ type RouteContext = {
 };
 
 export async function POST(request: Request, context: RouteContext) {
-  const { entity } = await context.params;
-
-  if (!isDbDocumentEntity(entity)) {
-    return NextResponse.json({ error: "Unknown document entity" }, { status: 404 });
-  }
-
   try {
-    const payload = (await request.json()) as DocumentPayload;
+    await requireSessionUser();
+    const { entity } = await context.params;
 
-    const detail = await saveDbDocumentDraft(entity, payload);
+    if (!isDbDocumentEntity(entity)) {
+      return NextResponse.json({ error: "Unknown document entity" }, { status: 404 });
+    }
+
+    const detail = await saveDbDocumentDraft(entity, await parseDocumentPayload(request));
 
     return NextResponse.json(detail);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Draft save failed" },
-      { status: 400 },
-    );
+    return jsonBadRequest(error, "Draft save failed");
   }
 }

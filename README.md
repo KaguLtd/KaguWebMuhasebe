@@ -21,8 +21,21 @@ insasi icin hazirlanmistir.
 ## Calistirma
 
 ```bash
-cd apps/muhasebe-web
 npm run dev
+```
+
+Bu komut root seviyesinden `apps/muhasebe-web` uygulamasini baslatir.
+
+Gelisim verisini sadece explicit seed ile yuklemek icin:
+
+```bash
+npm run seed:dev
+```
+
+FK migration oncesi orphan kontrolu icin:
+
+```bash
+npm run db:check-orphans
 ```
 
 ## Legacy Inventory
@@ -48,6 +61,15 @@ Genel readiness ozetini yazmak icin:
 npm run legacy:readiness:write
 ```
 
+Tum evidence snapshot'larini tek adimda yenilemek icin:
+
+```bash
+npm run evidence:refresh
+```
+
+Komut contract'inin tam ozeti icin [scripts/README.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/scripts/README.md)
+dosyasina bak.
+
 ## Kontroller
 
 ```bash
@@ -55,7 +77,11 @@ npm run lint
 npm run typecheck
 npm run test
 npm run build
+npm run verify
+npm run production:check
 ```
+
+`npm run verify` root seviyesinde lint, typecheck, parity testleri ve production build zincirini sirayla calistirir.
 
 ## Bir Sonraki Gereken Sey
 

@@ -1,4 +1,4 @@
-import { isPlaceholderAuthEnabled } from "@/lib/auth/session";
+import { isStrongSessionSecretConfigured } from "@/lib/auth/session";
 
 type CheckStatus = "fail" | "pass" | "warn";
 
@@ -21,8 +21,6 @@ export function getRuntimeReadinessChecks(): RuntimeReadinessCheck[] {
     process.env.KAGU_APP_ORIGIN || process.env.NEXT_PUBLIC_APP_URL,
   );
   const hasBackupAck = process.env.KAGU_BACKUP_PLAN_ACK === "true";
-  const placeholderAuthEnabled = isPlaceholderAuthEnabled();
-
   return [
     {
       detail: hasDatabaseUrl
@@ -38,7 +36,12 @@ export function getRuntimeReadinessChecks(): RuntimeReadinessCheck[] {
         : "Set AUTH_SECRET, KAGU_SESSION_SECRET, or SESSION_SECRET before real users.",
       key: "session-secret",
       label: "Session secret",
-      status: hasSessionSecret ? "pass" : isProduction ? "fail" : "warn",
+      status:
+        hasSessionSecret || isStrongSessionSecretConfigured()
+          ? "pass"
+          : isProduction
+            ? "fail"
+            : "warn",
     },
     {
       detail: hasAppOrigin
@@ -49,12 +52,10 @@ export function getRuntimeReadinessChecks(): RuntimeReadinessCheck[] {
       status: hasAppOrigin ? "pass" : isProduction ? "fail" : "warn",
     },
     {
-      detail: placeholderAuthEnabled
-        ? "Placeholder auth is enabled; this is acceptable only for local demos."
-        : "Placeholder auth is disabled for production access.",
+      detail: "Runtime placeholder auth removed; only DB-backed sessions are accepted.",
       key: "placeholder-auth",
       label: "Real auth gate",
-      status: placeholderAuthEnabled && isProduction ? "fail" : isProduction ? "pass" : "warn",
+      status: "pass",
     },
     {
       detail: hasBackupAck

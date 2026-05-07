@@ -1,13 +1,15 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import {
-  isPlaceholderSession,
-  PLACEHOLDER_SESSION_COOKIE,
-} from "@/lib/auth/session";
+import { SESSION_COOKIE } from "@/lib/auth/session";
 
 const PUBLIC_PATHS = ["/login"];
-const PUBLIC_API_PATHS = ["/api/health", "/api/auth/sign-out"];
+const PUBLIC_API_PATHS = [
+  "/api/health",
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/auth/sign-out",
+];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -29,9 +31,7 @@ export function proxy(request: NextRequest) {
       pathname === publicPath || pathname.startsWith(`${publicPath}/`),
     );
 
-  const hasSession = isPlaceholderSession(
-    request.cookies.get(PLACEHOLDER_SESSION_COOKIE)?.value,
-  );
+  const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
 
   if (!hasSession && !isPublicPath) {
     if (isApiPath) {

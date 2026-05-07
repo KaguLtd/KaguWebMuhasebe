@@ -1,40 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
 
-const requireFromWebApp = createRequire(
-  new URL("../../apps/muhasebe-web/package.json", import.meta.url),
+import { loadKaguModules, resetKaguGlobals } from "../_support/load-kagu-modules.mjs";
+
+resetKaguGlobals();
+const { requireTemp } = loadKaguModules(
+  ["config.ts", "helpers.ts", "document-engine.ts", "store.ts", "document-guards.ts"],
+  "kagu-master-",
 );
-const ts = requireFromWebApp("typescript");
-const sourceDir = fileURLToPath(
-  new URL("../../apps/muhasebe-web/lib/kagu/", import.meta.url),
-);
-const tempDir = mkdtempSync(join(tmpdir(), "kagu-master-"));
-
-for (const fileName of [
-  "config.ts",
-  "helpers.ts",
-  "document-engine.ts",
-  "store.ts",
-  "document-guards.ts",
-]) {
-  const source = readFileSync(join(sourceDir, fileName), "utf8");
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: {
-      esModuleInterop: true,
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-    },
-  });
-
-  writeFileSync(join(tempDir, fileName.replace(".ts", ".js")), compiled.outputText);
-}
-
-const requireTemp = createRequire(join(tempDir, "store.js"));
 const store = requireTemp("./store.js");
 const guards = requireTemp("./document-guards.js");
 

@@ -37,3 +37,9 @@ legacy/
 - Ornek rapor ciktisi var mi?
 - Veri saklama formati net mi?
 - Belge numaralandirma ve muhasebe fisleri icin ornek kayit var mi?
+
+## Parity Evidence Ayrimi
+
+- `legacy/notes/modules/*`: domain-regression testlerini besleyen ekran, kural ve validasyon notlari
+- `legacy/notes/reports/*`: legacy-acceptance testlerinde kullanilan rapor kolonlari, siralama ve toplam kurallari
+- `legacy/notes/PARITY_EVIDENCE_CHECKLIST.md`: bir fixture veya golden output'un hangi legacy kanita dayandigini netlestiren checklist

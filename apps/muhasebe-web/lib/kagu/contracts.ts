@@ -186,3 +186,33 @@ export interface InvoiceMetrics {
   profitMinor: number;
   marginPercent: number | null;
 }
+
+export interface SettingsUser {
+  id: string;
+  username: string;
+  fullName?: string | null;
+  email?: string | null;
+  isActive?: boolean;
+  status?: string | null;
+  roleIds?: string[];
+  roleNames?: string[];
+  lastLoginAt?: string | null;
+}
+
+export interface SettingsUserPayload {
+  username: string;
+  fullName?: string;
+  email?: string;
+  password?: string;
+  isActive?: boolean;
+  roleIds?: string[];
+}
+
+export interface SettingsRole {
+  id: string;
+  key?: string | null;
+  name: string;
+  description?: string | null;
+  isSystem?: boolean;
+  userCount?: number;
+}

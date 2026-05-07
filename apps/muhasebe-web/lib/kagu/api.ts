@@ -13,6 +13,9 @@ import type {
   MasterEntity,
   PaginatedResult,
   SaveMasterPayload,
+  SettingsRole,
+  SettingsUser,
+  SettingsUserPayload,
   WarehouseInventoryReport,
 } from "./contracts";
 
@@ -159,6 +162,72 @@ export async function fetchWarehouseInventory(warehouseId: string) {
 
 export async function fetchItemMovements(itemId: string) {
   return fetchJson<ItemMovementReport>(`/api/master/items/${itemId}/movements`);
+}
+
+export async function loginWithPassword(payload: {
+  username: string;
+  password: string;
+}) {
+  return fetchJson<{ ok: boolean; redirectTo?: string }>("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function logoutSession() {
+  return fetchJson<{ ok: boolean }>("/api/auth/logout", {
+    method: "POST",
+  });
+}
+
+export async function fetchSettingsUsers(query: Pick<ListQuery, "search"> = {}) {
+  const params = new URLSearchParams();
+
+  if (query.search) {
+    params.set("search", query.search);
+  }
+
+  const suffix = params.size ? `?${params.toString()}` : "";
+  const payload = await fetchJson<{ items?: SettingsUser[] } | SettingsUser[]>(
+    `/api/settings/users${suffix}`,
+  );
+
+  return Array.isArray(payload) ? payload : (payload.items ?? []);
+}
+
+export async function createSettingsUser(payload: SettingsUserPayload) {
+  const response = await fetchJson<{ item: SettingsUser }>(`/api/settings/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  return response.item;
+}
+
+export async function updateSettingsUser(
+  id: string,
+  payload: Partial<SettingsUserPayload>,
+) {
+  const response = await fetchJson<{ item: SettingsUser }>(
+    `/api/settings/users/${id}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return response.item;
+}
+
+export async function fetchSettingsRoles() {
+  const payload = await fetchJson<{ items?: SettingsRole[] } | SettingsRole[]>(
+    "/api/settings/roles",
+  );
+
+  return Array.isArray(payload) ? payload : (payload.items ?? []);
 }
 
 async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {

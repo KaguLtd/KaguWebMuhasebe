@@ -8,11 +8,7 @@ import type {
   WarehouseInventoryReport,
   WarehouseInventoryRow,
 } from "./contracts";
-import {
-  getAllDbLedgerEntries,
-  getAllDbStockMovements,
-  getDbInvoiceMetrics,
-} from "./document-repository";
+import { getDbInvoiceMetrics } from "./document-repository";
 import { currency, dateString, number, text } from "./db-shared";
 import { prisma } from "@/server/db";
 
@@ -27,15 +23,13 @@ export async function getDbDashboardTotals(): Promise<AppSnapshot["dashboard"]> 
   let todayDocumentCount = 0;
 
   const invoices = await prisma.invoice.findMany({
-    where: { status: "APPROVED" },
+    include: { lines: true },
+    where: {
+      docDate: { gte: dateFromString(monthStart) },
+      invoiceKind: "SALES",
+      status: "APPROVED",
+    },
   });
-  const invoiceIds = invoices.map((invoice) => invoice.id);
-  const invoiceLines = invoiceIds.length
-    ? await prisma.invoiceLine.findMany({
-        where: { invoiceId: { in: invoiceIds } },
-      })
-    : [];
-  const invoiceLinesByInvoiceId = groupBy(invoiceLines, (line) => line.invoiceId);
 
   for (const entityCount of await Promise.all([
     prisma.deliveryNote.count({ where: { docDate: dateFromString(todayDate) } }),
@@ -47,12 +41,8 @@ export async function getDbDashboardTotals(): Promise<AppSnapshot["dashboard"]> 
   }
 
   for (const invoice of invoices) {
-    if (invoice.invoiceKind !== "SALES") {
-      continue;
-    }
-
     const docDate = dateString(invoice.docDate);
-    const amount = (invoiceLinesByInvoiceId.get(invoice.id) ?? []).reduce(
+    const amount = invoice.lines.reduce(
       (total, line) => total + Math.round(number(line.quantity) * line.unitPriceMinor),
       0,
     );
@@ -100,15 +90,35 @@ export async function getDbAccountStatementReport(
   let debitTotalMinor = 0;
   let creditTotalMinor = 0;
 
-  const entries = (await getAllDbLedgerEntries())
-    .filter((entry) => entry.accountId === accountId)
-    .filter((entry) => !dateFrom || entry.docDate >= dateFrom)
-    .filter((entry) => !dateTo || entry.docDate <= dateTo)
-    .toSorted((left, right) => {
-      const byDate = left.docDate.localeCompare(right.docDate);
-
-      return byDate || left.createdAt.localeCompare(right.createdAt);
-    });
+  const entries = (
+    await prisma.accountLedgerEntry.findMany({
+      orderBy: [{ docDate: "asc" }, { createdAt: "asc" }],
+      where: {
+        accountId,
+        ...(dateFrom || dateTo
+          ? {
+              docDate: {
+                ...(dateFrom ? { gte: dateFromString(dateFrom) } : {}),
+                ...(dateTo ? { lte: dateFromString(dateTo) } : {}),
+              },
+            }
+          : {}),
+      },
+    })
+  ).map((entry) => ({
+    accountId: entry.accountId,
+    createdAt: entry.createdAt.toISOString(),
+    creditMinor: entry.creditMinor,
+    currency: currency(entry.currency),
+    debitMinor: entry.debitMinor,
+    description: entry.description,
+    docDate: dateString(entry.docDate),
+    docId: entry.docId,
+    docNo: entry.docNo,
+    docType: entry.docType,
+    id: entry.id,
+    projectId: entry.projectId,
+  }));
 
   for (const entry of entries) {
     debitTotalMinor += entry.debitMinor;
@@ -142,37 +152,39 @@ export async function getDbWarehouseInventoryReport(
     return null;
   }
 
-  const quantityByItem = new Map<string, number>();
-
-  for (const movement of await getAllDbStockMovements()) {
-    if (movement.warehouseId !== warehouseId) {
-      continue;
-    }
-
-    quantityByItem.set(
+  const movementSums = await prisma.stockMovement.groupBy({
+    by: ["itemId"],
+    where: { warehouseId },
+    _sum: { qtyIn: true, qtyOut: true },
+  });
+  const quantityByItem = new Map(
+    movementSums.map((movement) => [
       movement.itemId,
-      (quantityByItem.get(movement.itemId) ?? 0) + movement.qtyIn - movement.qtyOut,
-    );
-  }
+      number(movement._sum.qtyIn) - number(movement._sum.qtyOut),
+    ]),
+  );
 
   const rows: WarehouseInventoryRow[] = [];
+
+  const items = await prisma.item.findMany({
+    include: { unit: true },
+    where: { id: { in: [...quantityByItem.keys()] } },
+  });
+  const itemById = new Map(items.map((item) => [item.id, item]));
 
   for (const [itemId, quantity] of quantityByItem.entries()) {
     if (Math.abs(quantity) <= 0.000001) {
       continue;
     }
 
-    const item = await prisma.item.findUnique({ where: { id: itemId } });
-    const unit = item
-      ? await prisma.unit.findUnique({ where: { id: item.unitId } })
-      : null;
+    const item = itemById.get(itemId);
 
     rows.push({
       itemCode: text(item?.code),
       itemId,
       itemName: text(item?.name),
       quantity,
-      unitLabel: unit?.name ?? null,
+      unitLabel: item?.unit.name ?? null,
     });
   }
 
@@ -198,21 +210,27 @@ export async function getDbItemMovementReport(
     return null;
   }
 
-  const rows: ItemMovementRow[] = [];
-
-  for (const movement of (await getAllDbStockMovements()).filter(
-    (entry) => entry.itemId === itemId,
-  )) {
-    const warehouse = await prisma.warehouse.findUnique({
-      where: { id: movement.warehouseId },
-    });
-
-    rows.push({
-      ...movement,
-      warehouseCode: text(warehouse?.code),
-      warehouseName: text(warehouse?.name),
-    });
-  }
+  const rows: ItemMovementRow[] = (
+    await prisma.stockMovement.findMany({
+      include: { warehouse: true },
+      orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
+      where: { itemId },
+    })
+  ).map((movement) => ({
+    createdAt: movement.createdAt.toISOString(),
+    docDate: dateString(movement.docDate),
+    docId: movement.docId,
+    docNo: movement.docNo,
+    docType: movement.docType,
+    id: movement.id,
+    itemId: movement.itemId,
+    projectId: movement.projectId,
+    qtyIn: number(movement.qtyIn),
+    qtyOut: number(movement.qtyOut),
+    warehouseCode: text(movement.warehouse.code),
+    warehouseId: movement.warehouseId,
+    warehouseName: text(movement.warehouse.name),
+  }));
 
   return {
     item: {
@@ -224,11 +242,7 @@ export async function getDbItemMovementReport(
       name: item.name,
       unit_id: item.unitId,
     },
-    rows: rows.toSorted((left, right) => {
-      const byDate = right.docDate.localeCompare(left.docDate);
-
-      return byDate || right.createdAt.localeCompare(left.createdAt);
-    }),
+    rows,
   };
 }
 
@@ -236,16 +250,15 @@ export { getDbInvoiceMetrics };
 
 async function getInventoryTotalsByCurrency() {
   const totals = emptyCurrencyTotals();
-  const quantityByItem = new Map<string, number>();
+  const movementSums = await prisma.stockMovement.groupBy({
+    by: ["itemId"],
+    _sum: { qtyIn: true, qtyOut: true },
+  });
 
-  for (const movement of await getAllDbStockMovements()) {
-    quantityByItem.set(
-      movement.itemId,
-      (quantityByItem.get(movement.itemId) ?? 0) + movement.qtyIn - movement.qtyOut,
-    );
-  }
+  for (const movement of movementSums) {
+    const itemId = movement.itemId;
+    const quantity = number(movement._sum.qtyIn) - number(movement._sum.qtyOut);
 
-  for (const [itemId, quantity] of quantityByItem) {
     if (Math.abs(quantity) <= 0.000001) {
       continue;
     }
@@ -344,23 +357,6 @@ function deliveryStockDirection(direction: string, isReturn: boolean): "IN" | "O
   const baseIsInbound = direction === "IN";
 
   return baseIsInbound !== isReturn ? "IN" : "OUT";
-}
-
-function groupBy<T, K>(items: T[], selectKey: (item: T) => K) {
-  const grouped = new Map<K, T[]>();
-
-  for (const item of items) {
-    const key = selectKey(item);
-    const group = grouped.get(key);
-
-    if (group) {
-      group.push(item);
-    } else {
-      grouped.set(key, [item]);
-    }
-  }
-
-  return grouped;
 }
 
 function emptyCurrencyTotals(): Record<Currency, number> {

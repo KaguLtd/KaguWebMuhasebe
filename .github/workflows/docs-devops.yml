@@ -1,0 +1,65 @@
+name: docs-devops
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "README.md"
+      - "package.json"
+      - "apps/muhasebe-web/README.md"
+      - "apps/muhasebe-web/package.json"
+      - "apps/muhasebe-web/package-lock.json"
+      - "docs/**"
+      - "scripts/README.md"
+      - "tests/parity/README.md"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "README.md"
+      - "package.json"
+      - "apps/muhasebe-web/README.md"
+      - "apps/muhasebe-web/package.json"
+      - "apps/muhasebe-web/package-lock.json"
+      - "docs/**"
+      - "scripts/README.md"
+      - "tests/parity/README.md"
+      - ".github/workflows/**"
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/kagu_ci?schema=public
+      AUTH_SECRET: ci-not-for-production
+      KAGU_APP_ORIGIN: https://muhasebe.kagultd.com
+      KAGU_BACKUP_PLAN_ACK: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/muhasebe-web/package-lock.json
+
+      - name: Install app dependencies
+        run: npm ci --prefix apps/muhasebe-web
+
+      - name: Refresh evidence snapshots
+        run: npm run evidence:refresh
+
+      - name: Verify workspace contract
+        run: npm run verify
+
+      - name: Check production contract
+        run: npm run production:check
+
+      - name: Upload evidence snapshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-evidence
+          path: |
+            docs/LEGACY_INVENTORY.md
+            docs/LEGACY_READYNESS.md

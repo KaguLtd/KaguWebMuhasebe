@@ -34,6 +34,11 @@ export interface DocumentModuleConfig {
   filterLookups?: LookupEntity[];
 }
 
+export interface SettingsWorkspaceTab {
+  key: string;
+  title: string;
+}
+
 export const currencyOptions = [
   { label: "TRY", value: "TRY" },
   { label: "USD", value: "USD" },
@@ -303,6 +308,15 @@ export const settingsMasterEntities: MasterEntity[] = [
 export const settingsMasterModules = masterModules.filter((module) =>
   settingsMasterEntities.includes(module.entity),
 );
+
+export const settingsWorkspaceTabs: SettingsWorkspaceTab[] = [
+  ...settingsMasterModules.map((module) => ({
+    key: module.key,
+    title: module.title,
+  })),
+  { key: "settingsUsers", title: "Kullanicilar" },
+  { key: "settingsRoles", title: "Roller" },
+];
 
 export const primaryMasterModules = masterModules.filter(
   (module) => !settingsMasterEntities.includes(module.entity),

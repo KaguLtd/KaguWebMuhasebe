@@ -26,12 +26,25 @@ Bu tablo KAGU-ERP-D1 web donusumunde mevcut uygulama durumunu gosterir. `legacy/
 
 - `Bekliyor`: Legacy kaniti henuz yok veya web tarafinda is baslamadi.
 - `Analiz Edildi`: Legacy ekran, veri ve davranis dokumante edildi.
-- `Web'de Yapildi`: Implementasyon bitti ancak tam parity kabul testi eksik.
-- `Test Edildi`: Unit, integration veya parity testleri var.
+- `Web'de Yapildi`: Implementasyon bitti ancak legacy acceptance fixture'i eksik.
+- `Test Edildi`: Domain-regression veya legacy-acceptance testi var.
 - `Onaylandi`: Legacy ile davranis esitligi kullanici tarafindan kabul edildi.
+
+## Test Yuzeyi
+
+- `Domain regression`: `tests/parity/domain-regression/*`
+  Legacy'den cikarilan is kurallari, numaralandirma ve guard davranislarini hizli regresyon olarak korur.
+- `Legacy acceptance`: `tests/parity/legacy-acceptance/*`
+  `legacy/**` altindaki kanit, fixture ve golden output ile calisir; bir module `Onaylandi` demek icin hedef suite budur.
+
+## Evidence Checklist
+
+- Moduller icin ekran/akis/hesap kurali notlari `legacy/notes/modules/*` altinda doldurulmus olmali.
+- Raporlar icin kolon, siralama, toplam ve export beklentisi `legacy/notes/reports/*` altinda kayitli olmali.
+- Acceptance fixture'i varsa ayni kanitin ornek veri/golden output izi `legacy/notes/PARITY_EVIDENCE_CHECKLIST.md` ile baglanmali.
 
 ## Sonraki Parity Odaklari
 
 - PostgreSQL uzerinde gercek veriyle migration smoke testi.
 - Manuel muhasebe fisi, kasa/banka ayrintilari ve kullanici yetki modeli.
-- Legacy rapor ciktilari geldikce golden-output parity testleri.
+- Legacy rapor ciktilari geldikce `tests/parity/legacy-acceptance` altina golden-output parity testleri.
