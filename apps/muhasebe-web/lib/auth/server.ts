@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { prisma } from "@/server/db";
 
 import { verifyPassword } from "./password";
+import type { AuthPermission } from "./permissions";
+import { hasPermission } from "./permissions";
 import {
   createSessionToken,
   getSessionCookieOptions,
@@ -10,24 +12,44 @@ import {
   hashSessionToken,
   SESSION_COOKIE,
 } from "./session";
+import {
+  assertLoginAllowed,
+  clearLoginFailures,
+  getLoginAttemptMetadata,
+  normalizeLoginUsername,
+  recordLoginFailure,
+} from "./lockout";
+import { getSessionUserByToken, revokeSessionToken } from "./session-store";
 import { HttpError } from "@/lib/http/errors";
 
-export async function loginWithPassword(username: string, password: string) {
+export async function loginWithPassword(
+  username: string,
+  password: string,
+  request?: Request,
+) {
+  const normalizedUsername = normalizeLoginUsername(username);
+  const metadata = request ? getLoginAttemptMetadata(request) : {};
+
+  await assertLoginAllowed(normalizedUsername);
+
   const user = await prisma.user.findUnique({
-    where: { username },
+    where: { username: normalizedUsername },
     include: { roles: { include: { role: true } } },
   });
 
   if (!user || !user.isActive) {
+    await recordLoginFailure(normalizedUsername, metadata);
     throw new HttpError(401, "Kullanici adi veya sifre hatali");
   }
 
   const valid = await verifyPassword(password, user.passwordHash);
 
   if (!valid) {
+    await recordLoginFailure(normalizedUsername, metadata);
     throw new HttpError(401, "Kullanici adi veya sifre hatali");
   }
 
+  await clearLoginFailures(normalizedUsername, metadata);
   return createSessionForUser(user.id);
 }
 
@@ -52,36 +74,13 @@ export async function createSessionForUser(userId: string) {
 export async function getSessionUser() {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
+  const user = await getSessionUserByToken(token);
 
-  if (!token) {
-    return null;
-  }
-
-  const session = await prisma.session.findUnique({
-    where: { tokenHash: hashSessionToken(token) },
-    include: { user: { include: { roles: { include: { role: true } } } } },
-  });
-
-  if (!session || session.expiresAt.getTime() <= Date.now() || !session.user.isActive) {
-    if (session) {
-      await prisma.session.delete({ where: { id: session.id } }).catch(() => undefined);
-    }
-
+  if (!user && token) {
     cookieStore.delete(SESSION_COOKIE);
-    return null;
   }
 
-  await prisma.session.update({
-    where: { id: session.id },
-    data: { lastSeenAt: new Date() },
-  });
-
-  return {
-    id: session.user.id,
-    isActive: session.user.isActive,
-    roles: session.user.roles.map((membership) => membership.role.key),
-    username: session.user.username,
-  };
+  return user;
 }
 
 export async function requireSessionUser() {
@@ -95,10 +94,14 @@ export async function requireSessionUser() {
 }
 
 export async function requireAdminUser() {
+  return requirePermission("users.manage");
+}
+
+export async function requirePermission(permission: AuthPermission) {
   const user = await requireSessionUser();
 
-  if (!user.roles.includes("ADMIN")) {
-    throw new HttpError(403, "Bu islem icin admin yetkisi gerekiyor");
+  if (!hasPermission(user.permissions, permission)) {
+    throw new HttpError(403, "Bu islem icin yetkiniz bulunmuyor");
   }
 
   return user;
@@ -108,11 +111,7 @@ export async function logoutCurrentSession() {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
 
-  if (token) {
-    await prisma.session
-      .deleteMany({ where: { tokenHash: hashSessionToken(token) } })
-      .catch(() => undefined);
-  }
+  await revokeSessionToken(token);
 
   cookieStore.delete(SESSION_COOKIE);
 }

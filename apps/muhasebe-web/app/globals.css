@@ -226,6 +226,10 @@ input {
   vertical-align: top;
 }
 
+.kagu-row-muted > td {
+  opacity: 0.58;
+}
+
 .kagu-print-page {
   min-height: 100vh;
   padding: 28px;

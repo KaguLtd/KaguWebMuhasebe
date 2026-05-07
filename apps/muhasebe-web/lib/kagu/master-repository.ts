@@ -278,10 +278,13 @@ export async function getDbMaster(entity: MasterEntity, id: string) {
 export async function saveDbMaster(
   entity: MasterEntity,
   payload: SaveMasterPayload,
+  actorUserId: string,
 ) {
   await ensureMasterSeeded();
 
-  return prisma.$transaction(async (tx) => saveDbMasterWithTx(tx, entity, payload));
+  return prisma.$transaction(async (tx) =>
+    saveDbMasterWithTx(tx, entity, payload, actorUserId),
+  );
 }
 
 export async function deleteDbMaster(entity: MasterEntity, id: string) {
@@ -338,6 +341,7 @@ async function saveDbMasterWithTx(
   tx: Tx,
   entity: MasterEntity,
   payload: SaveMasterPayload,
+  actorUserId: string,
 ) {
   const id = typeof payload.id === "string" && payload.id ? payload.id : randomUUID();
   const normalized = normalizePayload(entity, payload);
@@ -360,6 +364,7 @@ async function saveDbMasterWithTx(
   await tx.auditEvent.create({
     data: {
       action: existing ? "UPDATE" : "CREATE",
+      actorUserId,
       entity,
       entityId: id,
       payload: next,

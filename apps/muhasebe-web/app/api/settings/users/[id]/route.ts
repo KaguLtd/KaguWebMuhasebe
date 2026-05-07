@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { requireAdminUser } from "@/lib/auth/server";
+import { requireSessionUser } from "@/lib/auth/server";
+import { requirePermissions, routePermissions } from "@/lib/http/authorization";
 import { updateUser } from "@/lib/admin/user-repository";
 import { jsonBadRequest } from "@/lib/http/response";
 import { parseUserPayload, requireStringId } from "@/lib/http/validation";
@@ -11,8 +12,15 @@ type RouteContext = {
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {
-    await requireAdminUser();
+    const user = await requireSessionUser();
     const { id } = await context.params;
+
+    await requirePermissions(
+      user,
+      routePermissions.settingsUsersWrite(),
+      "Kullanici guncelleme yetkiniz yok",
+    );
+
     const payload = await parseUserPayload(request, { partial: true });
 
     return NextResponse.json({

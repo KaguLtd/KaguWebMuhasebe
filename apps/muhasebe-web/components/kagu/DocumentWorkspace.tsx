@@ -5,6 +5,7 @@ import {
   App,
   Button,
   Card,
+  Descriptions,
   DatePicker,
   Drawer,
   Empty,
@@ -126,6 +127,8 @@ export function DocumentWorkspace({
       selectedToAccount?.currency &&
       selectedFromAccount.currency !== selectedToAccount.currency,
   );
+  const isRevisionMode = editing?.status === "APPROVED";
+  const isHistoryView = editing?.status === "VOID" || editing?.status === "SUPERSEDED";
 
   useEffect(() => {
     let active = true;
@@ -243,6 +246,7 @@ export function DocumentWorkspace({
 
       form.resetFields();
       form.setFieldsValue(toFormValues(module, detail.header, detail.lines));
+      form.setFieldValue("editReason", "");
       setDetail(detail);
       setInvoiceMetrics(metrics);
       setDrawerOpen(true);
@@ -425,6 +429,11 @@ export function DocumentWorkspace({
             showSizeChanger: true,
             total,
           }}
+          rowClassName={(record) =>
+            record.status === "VOID" || record.status === "SUPERSEDED"
+              ? "kagu-row-muted"
+              : ""
+          }
           rowKey={(record) => String(record.id)}
         />
       </Space>
@@ -435,7 +444,16 @@ export function DocumentWorkspace({
         size="min(1080px, 98vw)"
         title={editing ? `${module.title} Taslak` : `${module.title} Yeni Taslak`}
       >
-        <Form form={form} layout="vertical">
+        <Form disabled={isHistoryView} form={form} layout="vertical">
+          {isRevisionMode ? (
+            <Alert
+              description="Onayli belge dogrudan degistirilmez. Kayit, eski belgeyi etkisiz birakarak yeni bir revizyon taslagi olusturur."
+              message="Revizyon modundasiniz"
+              showIcon
+              style={{ marginBottom: 16 }}
+              type="warning"
+            />
+          ) : null}
           <Typography.Text className="kagu-section-kicker">
             Belge Basligi
           </Typography.Text>
@@ -479,12 +497,26 @@ export function DocumentWorkspace({
               </Form.List>
             </>
           ) : null}
+          {isRevisionMode ? (
+            <Form.Item
+              label="Degisiklik Notu"
+              name="editReason"
+              rules={[{ required: true, message: "Degisiklik nedeni gerekli" }]}
+            >
+              <Input.TextArea
+                autoSize={{ minRows: 3 }}
+                placeholder="Bu degisiklik neden yapildi?"
+              />
+            </Form.Item>
+          ) : null}
         </Form>
         <Space className="kagu-drawer-actions">
           <Button onClick={() => setDrawerOpen(false)}>Vazgec</Button>
-          <Button loading={saving} onClick={handleSaveDraft} type="primary">
-            Taslak Kaydet
-          </Button>
+          {!isHistoryView ? (
+            <Button loading={saving} onClick={handleSaveDraft} type="primary">
+              {isRevisionMode ? "Revizyon Taslagi Kaydet" : "Taslak Kaydet"}
+            </Button>
+          ) : null}
         </Space>
         <DocumentPostingDetail detail={detail} invoiceMetrics={invoiceMetrics} />
       </Drawer>
@@ -562,6 +594,7 @@ function DocumentListFilters({
         options={[
           { label: "Taslak", value: "DRAFT" },
           { label: "Onayli", value: "APPROVED" },
+          { label: "Degistirildi", value: "SUPERSEDED" },
           { label: "Iptal", value: "VOID" },
         ]}
         placeholder="Durum"
@@ -665,12 +698,50 @@ function DocumentPostingDetail({
 
   const currency =
     typeof detail.header.currency === "string" ? detail.header.currency : "TRY";
+  const status = String(detail.header.status ?? "");
 
   return (
     <Space orientation="vertical" size={14} style={{ marginTop: 20, width: "100%" }}>
       <Typography.Text className="kagu-section-kicker">
         Muhasebe / Stok Etkisi
       </Typography.Text>
+      <Card size="small" title="Belge Gecmisi">
+        <Descriptions column={2} size="small">
+          <Descriptions.Item label="Durum">
+            <Tag
+              color={
+                status === "APPROVED"
+                  ? "green"
+                  : status === "VOID"
+                    ? "red"
+                    : status === "SUPERSEDED"
+                      ? "purple"
+                      : "gold"
+              }
+            >
+              {humanizeEnum(status)}
+            </Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Etkili">
+            {detail.header.is_effective === false ? "Hayir" : "Evet"}
+          </Descriptions.Item>
+          <Descriptions.Item label="Yerine Gecen Belge">
+            {String(detail.header.superseded_by_id ?? "-")}
+          </Descriptions.Item>
+          <Descriptions.Item label="Kaynak Belge">
+            {String(detail.header.supersedes_id ?? "-")}
+          </Descriptions.Item>
+          <Descriptions.Item label="Degisiklik Notu" span={2}>
+            {String(detail.header.change_note ?? "-")}
+          </Descriptions.Item>
+          <Descriptions.Item label="Degistiren Kullanici">
+            {String(detail.header.changed_by_user_id ?? "-")}
+          </Descriptions.Item>
+          <Descriptions.Item label="Degistirilme Zamani">
+            {String(detail.header.superseded_at ?? detail.header.voided_at ?? "-")}
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
       {invoiceMetrics ? (
         <Card size="small" title="Fatura Metrikleri">
           <Space wrap>
@@ -695,10 +766,12 @@ function DocumentPostingDetail({
           </Space>
         </Card>
       ) : null}
-      <Table
+      <Table<(typeof detail.ledgerEntries)[number]>
         columns={[
           { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
           { dataIndex: "accountId", key: "accountId", title: "Cari" },
+          { dataIndex: "relatedAccountId", key: "relatedAccountId", title: "Ilgili Cari" },
+          { dataIndex: "description", key: "description", title: "Aciklama" },
           {
             dataIndex: "debitMinor",
             key: "debitMinor",
@@ -717,10 +790,11 @@ function DocumentPostingDetail({
         dataSource={detail.ledgerEntries.map((entry) => ({ ...entry }))}
         locale={{ emptyText: <Empty description="Ledger entry yok" /> }}
         pagination={false}
+        rowClassName={(record) => (record.isEffective === false ? "kagu-row-muted" : "")}
         rowKey="id"
         size="small"
       />
-      <Table
+      <Table<(typeof detail.stockMovements)[number]>
         columns={[
           { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
           { dataIndex: "warehouseId", key: "warehouseId", title: "Depo" },
@@ -731,8 +805,22 @@ function DocumentPostingDetail({
         dataSource={detail.stockMovements}
         locale={{ emptyText: <Empty description="Stok hareketi yok" /> }}
         pagination={false}
+        rowClassName={(record) => (record.isEffective === false ? "kagu-row-muted" : "")}
         rowKey="id"
         size="small"
+      />
+      <Table
+        columns={[
+          { dataIndex: "createdAt", key: "createdAt", title: "Zaman" },
+          { dataIndex: "action", key: "action", title: "Islem" },
+          { dataIndex: "actorUserId", key: "actorUserId", title: "Kullanici" },
+        ]}
+        dataSource={detail.auditEvents}
+        locale={{ emptyText: <Empty description="Audit kaydi yok" /> }}
+        pagination={false}
+        rowKey="id"
+        size="small"
+        title={() => "Kayit Izi"}
       />
     </Space>
   );
@@ -1038,7 +1126,14 @@ function renderDocumentCell(
 
   if (key === "status") {
     const status = String(value ?? "");
-    const color = status === "APPROVED" ? "green" : status === "VOID" ? "red" : "gold";
+    const color =
+      status === "APPROVED"
+        ? "green"
+        : status === "VOID"
+          ? "red"
+          : status === "SUPERSEDED"
+            ? "purple"
+            : "gold";
 
     return <Tag color={color}>{humanizeEnum(value)}</Tag>;
   }
@@ -1171,9 +1266,16 @@ function prepareDocumentPayload(
     selectedFromAccount?: LookupItem | null;
   },
 ) {
+  const isRevisionMode = editing?.status === "APPROVED";
   const payload: DocumentPayload = {
-    id: typeof editing?.id === "string" ? editing.id : undefined,
+    id: isRevisionMode ? undefined : typeof editing?.id === "string" ? editing.id : undefined,
   };
+
+  if (isRevisionMode && typeof editing?.id === "string") {
+    payload.supersedesId = editing.id;
+    payload.editReason =
+      typeof values.editReason === "string" ? values.editReason.trim() : undefined;
+  }
 
   for (const field of module.headerFields) {
     payload[field.name] = toStoredValue(field, values[field.name]);

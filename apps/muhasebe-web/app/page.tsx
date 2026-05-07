@@ -1,11 +1,9 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { SESSION_COOKIE } from "@/lib/auth/session";
+import { getSessionUser } from "@/lib/auth/server";
 
 export default async function HomePage() {
-  const cookieStore = await cookies();
-  const hasSession = Boolean(cookieStore.get(SESSION_COOKIE)?.value);
+  const sessionUser = await getSessionUser();
 
-  redirect(hasSession ? "/dashboard" : "/login");
+  redirect(sessionUser ? "/dashboard" : "/login");
 }

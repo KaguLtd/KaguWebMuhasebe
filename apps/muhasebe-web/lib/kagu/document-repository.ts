@@ -5,6 +5,7 @@ import {
   DocumentStatus as DbDocumentStatus,
   InvoiceKind as DbInvoiceKind,
   InvoiceType as DbInvoiceType,
+  PrismaClient,
   ReceiptKind as DbReceiptKind,
   type Prisma,
 } from "@prisma/client";
@@ -39,6 +40,7 @@ import { camelToSnake } from "./helpers";
 import { prisma } from "@/server/db";
 
 type Tx = Prisma.TransactionClient;
+type DbClient = PrismaClient | Prisma.TransactionClient;
 
 const documentEntities = new Set<DocumentEntity>([
   "deliveryNotes",
@@ -138,33 +140,62 @@ export async function getDbDocument(
   entity: DocumentEntity,
   id: string,
 ): Promise<DocumentDetail<DataRecord> | null> {
-  return getDocumentWithTx(prisma as unknown as Tx, entity, id);
+  return getDocumentWithTx(prisma, entity, id);
 }
 
 export async function saveDbDocumentDraft(
   entity: DocumentEntity,
   payload: DocumentPayload,
+  actorUserId: string,
 ) {
   return prisma.$transaction(async (tx) => {
-    const id = typeof payload.id === "string" && payload.id ? payload.id : randomUUID();
-    const existing = await findHeader(tx, entity, id);
+    const supersedesId =
+      typeof payload.supersedesId === "string" && payload.supersedesId.trim()
+        ? payload.supersedesId.trim()
+        : null;
+    const editingId = typeof payload.id === "string" && payload.id ? payload.id : null;
+    const id = editingId ?? randomUUID();
+    const existing = editingId ? await findHeader(tx, entity, id) : null;
+    const superseded =
+      supersedesId && supersedesId !== id ? await findHeader(tx, entity, supersedesId) : null;
 
-    if (existing?.status === "VOID") {
-      throw new Error("Voided documents cannot be edited");
+    if (existing?.status === "VOID" || existing?.status === "SUPERSEDED") {
+      throw new Error("Voided or superseded documents cannot be edited");
     }
 
-    if (existing?.status === "APPROVED" && !payload.editReason) {
-      throw new Error("Editing an approved document requires an edit reason");
+    if (existing?.status === "APPROVED") {
+      throw new Error("Approved documents must be revised through a new document");
     }
 
-    const status = existing?.status === "APPROVED" ? "APPROVED" : "DRAFT";
-    const nextHeader = cleanRecord({
-      ...(existing ?? {}),
+    if (superseded) {
+      if (superseded.status !== "APPROVED" || superseded.is_effective !== true) {
+        throw new Error("Only effective approved documents can be revised");
+      }
+
+      if (!payload.editReason?.trim()) {
+        throw new Error("Revising an approved document requires an edit reason");
+      }
+
+      await assertPeriodLockAllows(tx, String(superseded.doc_date), "Bu belge kilitli donemde");
+    }
+
+    const status = existing?.status ?? "DRAFT";
+    const nextHeader: DataRecord = cleanRecord({
+      ...(superseded ?? existing ?? {}),
       ...defaultsFor(entity),
       ...normalizeDocumentPayload(payload),
+      change_note:
+        typeof payload.editReason === "string" && payload.editReason.trim()
+          ? payload.editReason.trim()
+          : existing?.change_note ?? superseded?.change_note ?? null,
+      changed_by_user_id: actorUserId,
       doc_no: existing?.doc_no ?? draftDocNo(id),
       id,
+      is_effective: existing?.is_effective ?? true,
       status,
+      supersedes_id: supersedesId ?? existing?.supersedes_id ?? null,
+      superseded_at: existing?.superseded_at ?? null,
+      superseded_by_id: existing?.superseded_by_id ?? null,
     });
 
     await assertDocumentParityWithTx(tx, entity, nextHeader, payload.lines ?? []);
@@ -179,25 +210,24 @@ export async function saveDbDocumentDraft(
     await upsertHeader(tx, entity, id, nextHeader);
     await replaceLines(tx, entity, id, nextLines);
 
-    if (existing?.status === "APPROVED") {
-      await unpostDocument(tx, id);
-      await postDocument(tx, entity, nextHeader, nextLines);
-      await recordRevision(
-        tx,
-        documentType(entity, nextHeader),
-        id,
-        String(payload.editReason),
-        nextHeader,
-      );
-    }
-
-    await recordAudit(tx, entity, id, existing ? "UPDATE_DRAFT" : "CREATE_DRAFT", nextHeader);
+    await recordAudit(
+      tx,
+      entity,
+      id,
+      supersedesId ? "CREATE_REVISION_DRAFT" : existing ? "UPDATE_DRAFT" : "CREATE_DRAFT",
+      nextHeader,
+      actorUserId,
+    );
 
     return getDocumentWithTx(tx, entity, id);
   });
 }
 
-export async function approveDbDocument(entity: DocumentEntity, id: string) {
+export async function approveDbDocument(
+  entity: DocumentEntity,
+  id: string,
+  actorUserId: string,
+) {
   return prisma.$transaction(async (tx) => {
     const header = await findHeader(tx, entity, id);
 
@@ -205,8 +235,8 @@ export async function approveDbDocument(entity: DocumentEntity, id: string) {
       throw new Error("Document not found");
     }
 
-    if (header.status === "VOID") {
-      throw new Error("Cannot approve a voided document");
+    if (header.status === "VOID" || header.status === "SUPERSEDED") {
+      throw new Error("Cannot approve a voided or superseded document");
     }
 
     if (header.status === "APPROVED") {
@@ -217,26 +247,61 @@ export async function approveDbDocument(entity: DocumentEntity, id: string) {
 
     await assertDocumentParityWithTx(tx, entity, header, lines);
     validateApproval(entity, header, lines);
+    await assertPeriodLockAllows(tx, String(header.doc_date), "Belge tarihi kilitli donemde");
 
     const docType = documentType(entity, header);
     const docNo = String(header.doc_no).startsWith("DRAFT-")
       ? await allocateDocumentNumber(tx, docType, id, String(header.doc_date))
       : String(header.doc_no);
-    const nextHeader = {
+    const supersedesId =
+      typeof header.supersedes_id === "string" && header.supersedes_id.trim()
+        ? header.supersedes_id.trim()
+        : null;
+    const superseded =
+      supersedesId && supersedesId !== id ? await findHeader(tx, entity, supersedesId) : null;
+
+    if (superseded) {
+      if (superseded.status !== "APPROVED" || superseded.is_effective !== true) {
+        throw new Error("Superseded document is no longer active");
+      }
+
+      await assertPeriodLockAllows(
+        tx,
+        String(superseded.doc_date),
+        "Degistirilmek istenen belge kilitli donemde",
+      );
+    }
+
+    const nextHeader: DataRecord = {
       ...header,
       actual_doc_no:
         entity === "invoices" && header.invoice_type === "STAR"
           ? docNo
           : header.actual_doc_no,
       approved_at: new Date().toISOString(),
+      changed_by_user_id: actorUserId,
       doc_no: docNo,
+      is_effective: true,
       status: "APPROVED",
     };
 
     await upsertHeader(tx, entity, id, nextHeader);
-    await unpostDocument(tx, id);
     await postDocument(tx, entity, nextHeader, lines);
-    await recordAudit(tx, entity, id, "APPROVE", nextHeader);
+
+    if (superseded) {
+      await supersedeDocument(tx, entity, superseded, String(nextHeader.id), actorUserId);
+      await recordRevision(
+        tx,
+        documentType(entity, superseded),
+        String(superseded.id),
+        text(nextHeader.change_note) || "Belge yeni revizyon ile degistirildi",
+        {
+          replaced_by_doc_id: String(nextHeader.id),
+        },
+      );
+    }
+
+    await recordAudit(tx, entity, id, "APPROVE", nextHeader, actorUserId);
 
     return getDocumentWithTx(tx, entity, id);
   });
@@ -246,6 +311,7 @@ export async function voidDbDocument(
   entity: DocumentEntity,
   id: string,
   reason: string,
+  actorUserId: string,
 ) {
   return prisma.$transaction(async (tx) => {
     const header = await findHeader(tx, entity, id);
@@ -262,14 +328,22 @@ export async function voidDbDocument(
       return getDocumentWithTx(tx, entity, id);
     }
 
+    if (header.status === "SUPERSEDED") {
+      throw new Error("Superseded documents cannot be voided");
+    }
+
     if (entity === "deliveryNotes") {
       await assertDeliveryNoteCanVoid(tx, header);
     }
 
-    await unpostDocument(tx, id);
+    await assertPeriodLockAllows(tx, String(header.doc_date), "Bu belge kilitli donemde");
+    await deactivateDocumentEffects(tx, id, null);
 
-    const nextHeader = {
+    const nextHeader: DataRecord = {
       ...header,
+      changed_by_user_id: actorUserId,
+      change_note: reason,
+      is_effective: false,
       status: "VOID",
       void_reason: reason,
       voided_at: new Date().toISOString(),
@@ -277,7 +351,7 @@ export async function voidDbDocument(
 
     await upsertHeader(tx, entity, id, nextHeader);
     await recordRevision(tx, documentType(entity, header), id, reason, nextHeader);
-    await recordAudit(tx, entity, id, "VOID", nextHeader);
+    await recordAudit(tx, entity, id, "VOID", nextHeader, actorUserId);
 
     return getDocumentWithTx(tx, entity, id);
   });
@@ -291,7 +365,8 @@ export async function getDbInvoiceMetrics(invoiceId: string): Promise<InvoiceMet
   }
 
   const lines = await prisma.invoiceLine.findMany({ where: { invoiceId } });
-  const effectiveAt = effectiveDocumentTime(invoiceRecord(invoice));
+  const invoiceHeader = invoiceRecord(invoice);
+  const effectiveAt = effectiveDocumentTime(invoiceHeader);
   const invoiceCurrency = currency(invoice.currency);
   let invoiceNetTotalMinor = 0;
   let invoiceGrossTotalMinor = 0;
@@ -303,9 +378,11 @@ export async function getDbInvoiceMetrics(invoiceId: string): Promise<InvoiceMet
 
     invoiceNetTotalMinor += base;
     invoiceGrossTotalMinor += base + vat;
-    costTotalMinor += roundMinor(
-      number(line.quantity) *
-        (await resolveLatestPurchaseCost(text(line.item_id), invoiceCurrency, effectiveAt)),
+    costTotalMinor += await resolveInvoiceLineApproximateCost(
+      line,
+      invoiceHeader,
+      invoiceCurrency,
+      effectiveAt,
     );
   }
 
@@ -323,9 +400,74 @@ export async function getDbInvoiceMetrics(invoiceId: string): Promise<InvoiceMet
   };
 }
 
+async function resolveInvoiceLineApproximateCost(
+  line: DataRecord,
+  invoiceHeader: DataRecord,
+  invoiceCurrency: Currency,
+  fallbackEffectiveAt: string,
+) {
+  const itemId = text(line.item_id);
+  const quantity = number(line.quantity);
+
+  if (!itemId || quantity <= 0) {
+    return 0;
+  }
+
+  const sourceLineIds = getStoredSourceDeliveryLineIds(line);
+
+  if (!sourceLineIds.length) {
+    return roundMinor(
+      quantity * (await resolveLatestPurchaseCost(itemId, invoiceCurrency, fallbackEffectiveAt)),
+    );
+  }
+
+  const sourceLines = await prisma.deliveryNoteLine.findMany({
+    include: { deliveryNote: true },
+    where: { id: { in: sourceLineIds }, itemId },
+  });
+
+  let trackedQuantity = 0;
+  let costTotalMinor = 0;
+
+  for (const sourceLine of sourceLines) {
+    const deliveryHeader = deliveryHeaderRecord(sourceLine.deliveryNote);
+
+    if (
+      deliveryHeader.status !== "APPROVED" ||
+      deliveryHeader.isEffective !== true ||
+      resolveDeliveryStockDirection(deliveryHeader) !== "OUT"
+    ) {
+      continue;
+    }
+
+    const deliveryEffectiveAt = effectiveDocumentTime(deliveryHeader);
+    const unitCostMinor = await resolveLatestPurchaseCost(
+      itemId,
+      invoiceCurrency,
+      deliveryEffectiveAt,
+    );
+    const deliveryQuantity = number(sourceLine.quantity);
+
+    trackedQuantity += deliveryQuantity;
+    costTotalMinor += roundMinor(deliveryQuantity * unitCostMinor);
+  }
+
+  const remainingQuantity = Math.max(0, quantity - trackedQuantity);
+
+  if (remainingQuantity > 0) {
+    costTotalMinor += roundMinor(
+      remainingQuantity *
+        (await resolveLatestPurchaseCost(itemId, invoiceCurrency, fallbackEffectiveAt)),
+    );
+  }
+
+  return costTotalMinor;
+}
+
 export async function getAllDbLedgerEntries() {
   const rows = await prisma.accountLedgerEntry.findMany({
     orderBy: [{ docDate: "asc" }, { createdAt: "asc" }],
+    where: { isEffective: true },
   });
 
   return rows.map(ledgerEntryRecord);
@@ -334,13 +476,14 @@ export async function getAllDbLedgerEntries() {
 export async function getAllDbStockMovements() {
   const rows = await prisma.stockMovement.findMany({
     orderBy: [{ docDate: "asc" }, { createdAt: "asc" }],
+    where: { isEffective: true },
   });
 
   return rows.map(stockMovementRecord);
 }
 
 async function getDocumentWithTx(
-  tx: Tx,
+  tx: DbClient,
   entity: DocumentEntity,
   id: string,
 ): Promise<DocumentDetail<DataRecord> | null> {
@@ -350,7 +493,7 @@ async function getDocumentWithTx(
     return null;
   }
 
-  const [lines, revisions, ledgerEntries, stockMovements] = await Promise.all([
+  const [lines, revisions, ledgerEntries, stockMovements, auditEvents] = await Promise.all([
     getLines(tx, entity, id),
     tx.documentRevision
       .findMany({ orderBy: { revisionNo: "asc" }, where: { docId: id } })
@@ -361,12 +504,15 @@ async function getDocumentWithTx(
     tx.stockMovement
       .findMany({ orderBy: { createdAt: "asc" }, where: { docId: id } })
       .then((rows) => rows.map(stockMovementRecord)),
+    tx.auditEvent
+      .findMany({ orderBy: { createdAt: "desc" }, where: { entity, entityId: id } })
+      .then((rows) => rows.map(auditEventRecord)),
   ]);
 
-  return { header, ledgerEntries, lines, revisions, stockMovements };
+  return { auditEvents, header, ledgerEntries, lines, revisions, stockMovements };
 }
 
-async function findHeader(tx: Tx, entity: DocumentEntity, id: string) {
+async function findHeader(tx: DbClient, entity: DocumentEntity, id: string) {
   switch (entity) {
     case "deliveryNotes": {
       const row = await tx.deliveryNote.findUnique({ where: { id } });
@@ -391,7 +537,7 @@ async function findHeader(tx: Tx, entity: DocumentEntity, id: string) {
   }
 }
 
-async function getLines(tx: Tx, entity: DocumentEntity, id: string) {
+async function getLines(tx: DbClient, entity: DocumentEntity, id: string) {
   if (entity === "deliveryNotes") {
     const rows = await tx.deliveryNoteLine.findMany({
       orderBy: { id: "asc" },
@@ -426,15 +572,21 @@ async function upsertHeader(
           accountId: text(header.account_id),
           actualDocNo: nullableString(header.actual_doc_no),
           approvedAt: optionalDate(header.approved_at),
+          changeNote: nullableString(header.change_note),
+          changedByUserId: nullableString(header.changed_by_user_id),
           description: nullableString(header.description),
           direction: dbDeliveryDirection(header.direction),
           docDate: toDate(header.doc_date),
           docNo: text(header.doc_no),
           id,
+          isEffective: header.is_effective !== false,
           isReturn: header.is_return === true,
           mergeRole: dbDeliveryMergeRole(header.merge_role),
           projectId: nullableString(header.project_id),
           status: dbDocumentStatus(header.status),
+          supersededAt: optionalDate(header.superseded_at),
+          supersededById: nullableString(header.superseded_by_id),
+          supersedesId: nullableString(header.supersedes_id),
           voidReason: nullableString(header.void_reason),
           voidedAt: optionalDate(header.voided_at),
           warehouseId: text(header.warehouse_id),
@@ -443,14 +595,20 @@ async function upsertHeader(
           accountId: text(header.account_id),
           actualDocNo: nullableString(header.actual_doc_no),
           approvedAt: optionalDate(header.approved_at),
+          changeNote: nullableString(header.change_note),
+          changedByUserId: nullableString(header.changed_by_user_id),
           description: nullableString(header.description),
           direction: dbDeliveryDirection(header.direction),
           docDate: toDate(header.doc_date),
           docNo: text(header.doc_no),
+          isEffective: header.is_effective !== false,
           isReturn: header.is_return === true,
           mergeRole: dbDeliveryMergeRole(header.merge_role),
           projectId: nullableString(header.project_id),
           status: dbDocumentStatus(header.status),
+          supersededAt: optionalDate(header.superseded_at),
+          supersededById: nullableString(header.superseded_by_id),
+          supersedesId: nullableString(header.supersedes_id),
           voidReason: nullableString(header.void_reason),
           voidedAt: optionalDate(header.voided_at),
           warehouseId: text(header.warehouse_id),
@@ -464,6 +622,8 @@ async function upsertHeader(
           accountId: text(header.account_id),
           actualDocNo: nullableString(header.actual_doc_no),
           approvedAt: optionalDate(header.approved_at),
+          changeNote: nullableString(header.change_note),
+          changedByUserId: nullableString(header.changed_by_user_id),
           currency: dbCurrency(header.currency),
           description: nullableString(header.description),
           discountBps: number(header.discount_bps),
@@ -472,11 +632,15 @@ async function upsertHeader(
           documentTotalMinor: number(header.document_total_minor),
           exchangeRate: number(header.exchange_rate) || 1,
           id,
+          isEffective: header.is_effective !== false,
           invoiceKind: dbInvoiceKind(header.invoice_kind),
           invoiceType: dbInvoiceType(header.invoice_type),
           netTotalMinor: number(header.net_total_minor),
           projectId: nullableString(header.project_id),
           status: dbDocumentStatus(header.status),
+          supersededAt: optionalDate(header.superseded_at),
+          supersededById: nullableString(header.superseded_by_id),
+          supersedesId: nullableString(header.supersedes_id),
           vatTotalMinor: number(header.vat_total_minor),
           voidReason: nullableString(header.void_reason),
           voidedAt: optionalDate(header.voided_at),
@@ -486,6 +650,8 @@ async function upsertHeader(
           accountId: text(header.account_id),
           actualDocNo: nullableString(header.actual_doc_no),
           approvedAt: optionalDate(header.approved_at),
+          changeNote: nullableString(header.change_note),
+          changedByUserId: nullableString(header.changed_by_user_id),
           currency: dbCurrency(header.currency),
           description: nullableString(header.description),
           discountBps: number(header.discount_bps),
@@ -493,11 +659,15 @@ async function upsertHeader(
           docNo: text(header.doc_no),
           documentTotalMinor: number(header.document_total_minor),
           exchangeRate: number(header.exchange_rate) || 1,
+          isEffective: header.is_effective !== false,
           invoiceKind: dbInvoiceKind(header.invoice_kind),
           invoiceType: dbInvoiceType(header.invoice_type),
           netTotalMinor: number(header.net_total_minor),
           projectId: nullableString(header.project_id),
           status: dbDocumentStatus(header.status),
+          supersededAt: optionalDate(header.superseded_at),
+          supersededById: nullableString(header.superseded_by_id),
+          supersedesId: nullableString(header.supersedes_id),
           vatTotalMinor: number(header.vat_total_minor),
           voidReason: nullableString(header.void_reason),
           voidedAt: optionalDate(header.voided_at),
@@ -512,14 +682,20 @@ async function upsertHeader(
           accountId: text(header.account_id),
           amountMinor: number(header.amount_minor),
           approvedAt: optionalDate(header.approved_at),
+          changeNote: nullableString(header.change_note),
+          changedByUserId: nullableString(header.changed_by_user_id),
           currency: dbCurrency(header.currency),
           description: nullableString(header.description),
           docDate: toDate(header.doc_date),
           docNo: text(header.doc_no),
           id,
+          isEffective: header.is_effective !== false,
           projectId: nullableString(header.project_id),
           receiptKind: dbReceiptKind(header.receipt_kind),
           status: dbDocumentStatus(header.status),
+          supersededAt: optionalDate(header.superseded_at),
+          supersededById: nullableString(header.superseded_by_id),
+          supersedesId: nullableString(header.supersedes_id),
           voidReason: nullableString(header.void_reason),
           voidedAt: optionalDate(header.voided_at),
         },
@@ -527,13 +703,19 @@ async function upsertHeader(
           accountId: text(header.account_id),
           amountMinor: number(header.amount_minor),
           approvedAt: optionalDate(header.approved_at),
+          changeNote: nullableString(header.change_note),
+          changedByUserId: nullableString(header.changed_by_user_id),
           currency: dbCurrency(header.currency),
           description: nullableString(header.description),
           docDate: toDate(header.doc_date),
           docNo: text(header.doc_no),
+          isEffective: header.is_effective !== false,
           projectId: nullableString(header.project_id),
           receiptKind: dbReceiptKind(header.receipt_kind),
           status: dbDocumentStatus(header.status),
+          supersededAt: optionalDate(header.superseded_at),
+          supersededById: nullableString(header.superseded_by_id),
+          supersedesId: nullableString(header.supersedes_id),
           voidReason: nullableString(header.void_reason),
           voidedAt: optionalDate(header.voided_at),
         },
@@ -545,6 +727,8 @@ async function upsertHeader(
         create: {
           amountMinor: number(header.amount_minor),
           approvedAt: optionalDate(header.approved_at),
+          changeNote: nullableString(header.change_note),
+          changedByUserId: nullableString(header.changed_by_user_id),
           crossRate: number(header.cross_rate) || 1,
           currency: dbCurrency(header.currency),
           description: nullableString(header.description),
@@ -552,8 +736,12 @@ async function upsertHeader(
           docNo: text(header.doc_no),
           fromAccountId: text(header.from_account_id),
           id,
+          isEffective: header.is_effective !== false,
           projectId: nullableString(header.project_id),
           status: dbDocumentStatus(header.status),
+          supersededAt: optionalDate(header.superseded_at),
+          supersededById: nullableString(header.superseded_by_id),
+          supersedesId: nullableString(header.supersedes_id),
           targetAmountMinor: nullableNumber(header.target_amount_minor),
           toAccountId: text(header.to_account_id),
           voidReason: nullableString(header.void_reason),
@@ -562,14 +750,20 @@ async function upsertHeader(
         update: {
           amountMinor: number(header.amount_minor),
           approvedAt: optionalDate(header.approved_at),
+          changeNote: nullableString(header.change_note),
+          changedByUserId: nullableString(header.changed_by_user_id),
           crossRate: number(header.cross_rate) || 1,
           currency: dbCurrency(header.currency),
           description: nullableString(header.description),
           docDate: toDate(header.doc_date),
           docNo: text(header.doc_no),
           fromAccountId: text(header.from_account_id),
+          isEffective: header.is_effective !== false,
           projectId: nullableString(header.project_id),
           status: dbDocumentStatus(header.status),
+          supersededAt: optionalDate(header.superseded_at),
+          supersededById: nullableString(header.superseded_by_id),
+          supersedesId: nullableString(header.supersedes_id),
           targetAmountMinor: nullableNumber(header.target_amount_minor),
           toAccountId: text(header.to_account_id),
           voidReason: nullableString(header.void_reason),
@@ -765,14 +959,17 @@ async function postDocument(
 
     await tx.stockMovement.createMany({
       data: lines.map((line) => ({
+        cancelledAt: null,
         docDate,
         docId: String(header.id),
         docNo,
         docType,
         itemId: String(line.item_id),
+        isEffective: true,
         projectId: nullableString(header.project_id),
         qtyIn: stockDirection === "IN" ? number(line.quantity) : 0,
         qtyOut: stockDirection === "OUT" ? number(line.quantity) : 0,
+        replacedByDocId: null,
         warehouseId: String(header.warehouse_id),
       })),
     });
@@ -787,6 +984,7 @@ async function postDocument(
     await tx.accountLedgerEntry.create({
       data: {
         accountId: String(header.account_id),
+        cancelledAt: null,
         creditMinor: isSales ? 0 : totalMinor,
         currency: currency(header.currency),
         debitMinor: isSales ? totalMinor : 0,
@@ -795,7 +993,10 @@ async function postDocument(
         docId: String(header.id),
         docNo,
         docType,
+        isEffective: true,
         projectId: nullableString(header.project_id),
+        relatedAccountId: null,
+        replacedByDocId: null,
       },
     });
 
@@ -805,14 +1006,17 @@ async function postDocument(
       if (directLines.length) {
         await tx.stockMovement.createMany({
           data: directLines.map((line) => ({
+            cancelledAt: null,
             docDate,
             docId: String(header.id),
             docNo,
             docType,
             itemId: String(line.item_id),
+            isEffective: true,
             projectId: nullableString(header.project_id),
             qtyIn: isSales ? 0 : number(line.quantity),
             qtyOut: isSales ? number(line.quantity) : 0,
+            replacedByDocId: null,
             warehouseId: String(header.warehouse_id),
           })),
         });
@@ -828,6 +1032,7 @@ async function postDocument(
     await tx.accountLedgerEntry.create({
       data: {
         accountId: String(header.account_id),
+        cancelledAt: null,
         creditMinor: isPayment ? 0 : number(header.amount_minor),
         currency: currency(header.currency),
         debitMinor: isPayment ? number(header.amount_minor) : 0,
@@ -836,7 +1041,10 @@ async function postDocument(
         docId: String(header.id),
         docNo,
         docType,
+        isEffective: true,
         projectId: nullableString(header.project_id),
+        relatedAccountId: null,
+        replacedByDocId: null,
       },
     });
 
@@ -847,35 +1055,137 @@ async function postDocument(
     data: [
       {
         accountId: String(header.from_account_id),
+        cancelledAt: null,
         creditMinor: number(header.amount_minor),
         currency: currency(header.currency),
         debitMinor: 0,
-        description: nullableString(header.description) ?? "Transfer out",
+        description: await describeTransferSide(tx, "OUT", header),
         docDate,
         docId: String(header.id),
         docNo,
         docType,
+        isEffective: true,
         projectId: null,
+        relatedAccountId: String(header.to_account_id),
+        replacedByDocId: null,
       },
       {
         accountId: String(header.to_account_id),
+        cancelledAt: null,
         creditMinor: 0,
-        currency: currency(header.currency),
+        currency: await resolveTransferTargetCurrency(tx, header),
         debitMinor: resolveTransferTargetAmount(header),
-        description: nullableString(header.description) ?? "Transfer in",
+        description: await describeTransferSide(tx, "IN", header),
         docDate,
         docId: String(header.id),
         docNo,
         docType,
+        isEffective: true,
         projectId: null,
+        relatedAccountId: String(header.from_account_id),
+        replacedByDocId: null,
       },
     ],
   });
 }
 
-async function unpostDocument(tx: Tx, id: string) {
-  await tx.accountLedgerEntry.deleteMany({ where: { docId: id } });
-  await tx.stockMovement.deleteMany({ where: { docId: id } });
+async function deactivateDocumentEffects(
+  tx: Tx,
+  id: string,
+  replacedByDocId: string | null,
+) {
+  const cancelledAt = new Date();
+
+  await tx.accountLedgerEntry.updateMany({
+    data: {
+      cancelledAt,
+      isEffective: false,
+      replacedByDocId,
+    },
+    where: { docId: id, isEffective: true },
+  });
+  await tx.stockMovement.updateMany({
+    data: {
+      cancelledAt,
+      isEffective: false,
+      replacedByDocId,
+    },
+    where: { docId: id, isEffective: true },
+  });
+}
+
+async function supersedeDocument(
+  tx: Tx,
+  entity: DocumentEntity,
+  header: DataRecord,
+  replacedByDocId: string,
+  actorUserId: string,
+) {
+  const supersededAt = new Date().toISOString();
+  const nextHeader: DataRecord = {
+    ...header,
+    changed_by_user_id: actorUserId,
+    is_effective: false,
+    status: "SUPERSEDED",
+    superseded_at: supersededAt,
+    superseded_by_id: replacedByDocId,
+  };
+
+  await upsertHeader(tx, entity, String(header.id), nextHeader);
+  await deactivateDocumentEffects(tx, String(header.id), replacedByDocId);
+  await recordAudit(tx, entity, String(header.id), "SUPERSEDE", nextHeader, actorUserId);
+}
+
+async function assertPeriodLockAllows(
+  tx: Tx,
+  docDate: string,
+  message: string,
+) {
+  const setting = await tx.setting.findUnique({ where: { key: "periodLock" } });
+  const value =
+    setting?.value && typeof setting.value === "object"
+      ? (setting.value as { isActive?: boolean; lockDate?: string | null })
+      : null;
+  const lockDate =
+    value?.isActive === true && typeof value.lockDate === "string" && value.lockDate.trim()
+      ? value.lockDate.trim()
+      : null;
+
+  if (lockDate && docDate < lockDate) {
+    throw new Error(message);
+  }
+}
+
+async function resolveTransferTargetCurrency(tx: Tx, header: DataRecord): Promise<Currency> {
+  const toAccountId = text(header.to_account_id);
+
+  if (!toAccountId) {
+    return currency(header.currency);
+  }
+
+  const account = await tx.account.findUnique({ where: { id: toAccountId } });
+
+  return currency(account?.currency);
+}
+
+async function describeTransferSide(
+  tx: Tx,
+  side: "IN" | "OUT",
+  header: DataRecord,
+) {
+  const fromAccountId = text(header.from_account_id);
+  const toAccountId = text(header.to_account_id);
+  const [fromAccount, toAccount] = await Promise.all([
+    fromAccountId ? tx.account.findUnique({ where: { id: fromAccountId } }) : null,
+    toAccountId ? tx.account.findUnique({ where: { id: toAccountId } }) : null,
+  ]);
+  const targetLabel = toAccount ? `${toAccount.code} - ${toAccount.name}` : toAccountId;
+  const sourceLabel = fromAccount ? `${fromAccount.code} - ${fromAccount.name}` : fromAccountId;
+  const note = nullableString(header.description);
+
+  return side === "OUT"
+    ? `${note ? `${note} | ` : ""}Virman -> ${targetLabel}`
+    : `${note ? `${note} | ` : ""}Virman <- ${sourceLabel}`;
 }
 
 async function assertDocumentParityWithTx(
@@ -1008,7 +1318,7 @@ async function noteHasActiveInvoiceLink(tx: Tx, deliveryNoteId: string) {
 async function getInvoicedDeliveryNoteIds(tx: Tx) {
   const activeInvoices = await tx.invoice.findMany({
     select: { id: true },
-    where: { status: { not: "VOID" } },
+    where: { isEffective: true, status: { not: "VOID" } },
   });
   const activeInvoiceIds = activeInvoices.map((invoice) => invoice.id);
 
@@ -1129,9 +1439,10 @@ async function recordAudit(
   entityId: string,
   action: string,
   payload: DataRecord,
+  actorUserId: string,
 ) {
   await tx.auditEvent.create({
-    data: { action, entity, entityId, payload },
+    data: { action, actorUserId, entity, entityId, payload },
   });
 }
 
@@ -1162,12 +1473,21 @@ function buildDeliveryNoteWhere(query: ListQuery): Prisma.DeliveryNoteWhereInput
   applyDateRange(where, query);
 
   if (query.invoiceState === "INVOICED") {
-    where.lines = { some: { invoiceLines: { some: {} } } };
+    where.lines = {
+      some: { invoiceLines: { some: { invoice: { isEffective: true, status: { not: "VOID" } } } } },
+    };
   } else if (query.invoiceState === "UNINVOICED" || query.onlyOpenForInvoicing) {
-    where.NOT = { lines: { some: { invoiceLines: { some: {} } } } };
+    where.NOT = {
+      lines: {
+        some: {
+          invoiceLines: { some: { invoice: { isEffective: true, status: { not: "VOID" } } } },
+        },
+      },
+    };
 
     if (query.onlyOpenForInvoicing) {
       where.status = DbDocumentStatus.APPROVED;
+      where.isEffective = true;
     }
   }
 
@@ -1450,6 +1770,7 @@ async function findLatestPurchaseInvoiceCost(
 ) {
   const invoices = await prisma.invoice.findMany({
     where: {
+      isEffective: true,
       currency: costCurrency,
       invoiceKind: "PURCHASE",
       status: "APPROVED",
@@ -1491,7 +1812,7 @@ async function findLatestInboundDeliveryCost(
   effectiveAt: string,
 ) {
   const deliveryNotes = await prisma.deliveryNote.findMany({
-    where: { status: "APPROVED" },
+    where: { isEffective: true, status: "APPROVED" },
   });
   const deliveryNoteById = new Map(deliveryNotes.map((note) => [note.id, note]));
   const lines = await prisma.deliveryNoteLine.findMany({
@@ -1588,16 +1909,22 @@ function deliveryHeaderRecord(row: {
   accountId: string;
   actualDocNo: string | null;
   approvedAt: Date | null;
+  changeNote?: string | null;
+  changedByUserId?: string | null;
   createdAt: Date;
   description: string | null;
   direction: string;
   docDate: Date;
   docNo: string;
   id: string;
+  isEffective?: boolean;
   isReturn: boolean;
   mergeRole: string;
   projectId: string | null;
   status: string;
+  supersededAt?: Date | null;
+  supersededById?: string | null;
+  supersedesId?: string | null;
   updatedAt: Date;
   voidReason?: string | null;
   voidedAt: Date | null;
@@ -1607,16 +1934,22 @@ function deliveryHeaderRecord(row: {
     account_id: row.accountId,
     actual_doc_no: row.actualDocNo,
     approved_at: row.approvedAt ? isoString(row.approvedAt) : null,
+    change_note: row.changeNote ?? null,
+    changed_by_user_id: row.changedByUserId ?? null,
     created_at: isoString(row.createdAt),
     description: row.description,
     direction: row.direction,
     doc_date: dateString(row.docDate),
     doc_no: row.docNo,
     id: row.id,
+    is_effective: row.isEffective !== false,
     is_return: row.isReturn,
     merge_role: row.mergeRole,
     project_id: row.projectId,
     status: row.status,
+    superseded_at: row.supersededAt ? isoString(row.supersededAt) : null,
+    superseded_by_id: row.supersededById ?? null,
+    supersedes_id: row.supersedesId ?? null,
     updated_at: isoString(row.updatedAt),
     void_reason: row.voidReason ?? null,
     voided_at: row.voidedAt ? isoString(row.voidedAt) : null,
@@ -1628,6 +1961,8 @@ function invoiceRecord(row: {
   accountId: string;
   actualDocNo: string | null;
   approvedAt: Date | null;
+  changeNote?: string | null;
+  changedByUserId?: string | null;
   createdAt: Date;
   currency: string;
   description: string | null;
@@ -1637,11 +1972,15 @@ function invoiceRecord(row: {
   documentTotalMinor: number;
   exchangeRate: unknown;
   id: string;
+  isEffective?: boolean;
   invoiceKind: string;
   invoiceType: string;
   netTotalMinor: number;
   projectId: string | null;
   status: string;
+  supersededAt?: Date | null;
+  supersededById?: string | null;
+  supersedesId?: string | null;
   updatedAt: Date;
   vatTotalMinor: number;
   voidReason?: string | null;
@@ -1652,6 +1991,8 @@ function invoiceRecord(row: {
     account_id: row.accountId,
     actual_doc_no: row.actualDocNo,
     approved_at: row.approvedAt ? isoString(row.approvedAt) : null,
+    change_note: row.changeNote ?? null,
+    changed_by_user_id: row.changedByUserId ?? null,
     created_at: isoString(row.createdAt),
     currency: row.currency,
     description: row.description,
@@ -1661,11 +2002,15 @@ function invoiceRecord(row: {
     document_total_minor: row.documentTotalMinor,
     exchange_rate: number(row.exchangeRate) || 1,
     id: row.id,
+    is_effective: row.isEffective !== false,
     invoice_kind: row.invoiceKind,
     invoice_type: row.invoiceType,
     net_total_minor: row.netTotalMinor,
     project_id: row.projectId,
     status: row.status,
+    superseded_at: row.supersededAt ? isoString(row.supersededAt) : null,
+    superseded_by_id: row.supersededById ?? null,
+    supersedes_id: row.supersedesId ?? null,
     updated_at: isoString(row.updatedAt),
     vat_total_minor: row.vatTotalMinor,
     void_reason: row.voidReason ?? null,
@@ -1678,15 +2023,21 @@ function receiptRecord(row: {
   accountId: string;
   amountMinor: number;
   approvedAt: Date | null;
+  changeNote?: string | null;
+  changedByUserId?: string | null;
   createdAt: Date;
   currency: string;
   description: string | null;
   docDate: Date;
   docNo: string;
   id: string;
+  isEffective?: boolean;
   projectId: string | null;
   receiptKind: string;
   status: string;
+  supersededAt?: Date | null;
+  supersededById?: string | null;
+  supersedesId?: string | null;
   updatedAt: Date;
   voidReason?: string | null;
   voidedAt: Date | null;
@@ -1695,15 +2046,21 @@ function receiptRecord(row: {
     account_id: row.accountId,
     amount_minor: row.amountMinor,
     approved_at: row.approvedAt ? isoString(row.approvedAt) : null,
+    change_note: row.changeNote ?? null,
+    changed_by_user_id: row.changedByUserId ?? null,
     created_at: isoString(row.createdAt),
     currency: row.currency,
     description: row.description,
     doc_date: dateString(row.docDate),
     doc_no: row.docNo,
     id: row.id,
+    is_effective: row.isEffective !== false,
     project_id: row.projectId,
     receipt_kind: row.receiptKind,
     status: row.status,
+    superseded_at: row.supersededAt ? isoString(row.supersededAt) : null,
+    superseded_by_id: row.supersededById ?? null,
+    supersedes_id: row.supersedesId ?? null,
     updated_at: isoString(row.updatedAt),
     void_reason: row.voidReason ?? null,
     voided_at: row.voidedAt ? isoString(row.voidedAt) : null,
@@ -1713,6 +2070,8 @@ function receiptRecord(row: {
 function transferRecord(row: {
   amountMinor: number;
   approvedAt: Date | null;
+  changeNote?: string | null;
+  changedByUserId?: string | null;
   createdAt: Date;
   crossRate?: unknown;
   currency: string;
@@ -1721,8 +2080,12 @@ function transferRecord(row: {
   docNo: string;
   fromAccountId: string;
   id: string;
+  isEffective?: boolean;
   projectId: string | null;
   status: string;
+  supersededAt?: Date | null;
+  supersededById?: string | null;
+  supersedesId?: string | null;
   targetAmountMinor?: number | null;
   toAccountId: string;
   updatedAt: Date;
@@ -1732,6 +2095,8 @@ function transferRecord(row: {
   return {
     amount_minor: row.amountMinor,
     approved_at: row.approvedAt ? isoString(row.approvedAt) : null,
+    change_note: row.changeNote ?? null,
+    changed_by_user_id: row.changedByUserId ?? null,
     created_at: isoString(row.createdAt),
     cross_rate: number(row.crossRate),
     currency: row.currency,
@@ -1740,8 +2105,12 @@ function transferRecord(row: {
     doc_no: row.docNo,
     from_account_id: row.fromAccountId,
     id: row.id,
+    is_effective: row.isEffective !== false,
     project_id: row.projectId,
     status: row.status,
+    superseded_at: row.supersededAt ? isoString(row.supersededAt) : null,
+    superseded_by_id: row.supersededById ?? null,
+    supersedes_id: row.supersedesId ?? null,
     target_amount_minor: row.targetAmountMinor ?? null,
     to_account_id: row.toAccountId,
     updated_at: isoString(row.updatedAt),
@@ -1816,6 +2185,7 @@ function invoiceLineRecord(row: {
 
 function ledgerEntryRecord(row: {
   accountId: string;
+  cancelledAt?: Date | null;
   createdAt: Date;
   creditMinor: number;
   currency: string;
@@ -1826,10 +2196,14 @@ function ledgerEntryRecord(row: {
   docNo: string;
   docType: string;
   id: string;
+  isEffective?: boolean;
   projectId: string | null;
+  relatedAccountId?: string | null;
+  replacedByDocId?: string | null;
 }): LedgerEntry {
   return {
     accountId: row.accountId,
+    cancelledAt: row.cancelledAt ? isoString(row.cancelledAt) : null,
     createdAt: isoString(row.createdAt),
     creditMinor: row.creditMinor,
     currency: currency(row.currency),
@@ -1840,35 +2214,74 @@ function ledgerEntryRecord(row: {
     docNo: row.docNo,
     docType: row.docType,
     id: row.id,
+    isEffective: row.isEffective !== false,
     projectId: row.projectId,
+    relatedAccountId: row.relatedAccountId ?? null,
+    replacedByDocId: row.replacedByDocId ?? null,
   };
 }
 
 function stockMovementRecord(row: {
+  cancelledAt?: Date | null;
   createdAt: Date;
   docDate: Date;
   docId: string;
   docNo: string;
   docType: string;
   id: string;
+  isEffective?: boolean;
   itemId: string;
   projectId: string | null;
   qtyIn: unknown;
   qtyOut: unknown;
+  replacedByDocId?: string | null;
   warehouseId: string;
 }): StockMovement {
   return {
+    cancelledAt: row.cancelledAt ? isoString(row.cancelledAt) : null,
     createdAt: isoString(row.createdAt),
     docDate: dateString(row.docDate),
     docId: row.docId,
     docNo: row.docNo,
     docType: row.docType,
     id: row.id,
+    isEffective: row.isEffective !== false,
     itemId: row.itemId,
     projectId: row.projectId,
     qtyIn: number(row.qtyIn),
     qtyOut: number(row.qtyOut),
+    replacedByDocId: row.replacedByDocId ?? null,
     warehouseId: row.warehouseId,
+  };
+}
+
+function auditEventRecord(row: {
+  action: string;
+  actorUserId: string | null;
+  createdAt: Date;
+  entity: string;
+  entityId: string;
+  id: string;
+  payload: Prisma.JsonValue | null;
+}) {
+  const payload =
+    row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+      ? Object.fromEntries(
+          Object.entries(row.payload as Record<string, unknown>).map(([key, value]) => [
+            key,
+            dataValue(value),
+          ]),
+        )
+      : null;
+
+  return {
+    action: row.action,
+    actorUserId: row.actorUserId,
+    createdAt: isoString(row.createdAt),
+    entity: row.entity,
+    entityId: row.entityId,
+    id: row.id,
+    payload,
   };
 }
 

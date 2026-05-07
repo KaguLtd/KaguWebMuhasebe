@@ -5,7 +5,7 @@ export type InvoiceType = "STANDARD" | "STAR";
 export type DeliveryDirection = "IN" | "OUT";
 export type DeliveryMergeRole = "NORMAL" | "MERGED_RESULT" | "MERGED_SOURCE";
 export type ReceiptKind = "COLLECTION" | "PAYMENT";
-export type DocumentStatus = "DRAFT" | "APPROVED" | "VOID";
+export type DocumentStatus = "DRAFT" | "APPROVED" | "VOID" | "SUPERSEDED";
 export type StockCountStatus = "DRAFT" | "FINISHED" | "VOID";
 
 export type MasterEntity =
@@ -104,6 +104,7 @@ export interface DocumentPayload {
   id?: string;
   lines?: DocumentLinePayload[];
   editReason?: string;
+  supersedesId?: string;
   [key: string]: unknown;
 }
 
@@ -113,11 +114,13 @@ export interface DocumentDetail<T = DataRecord> {
   revisions: DataRecord[];
   ledgerEntries: LedgerEntry[];
   stockMovements: StockMovement[];
+  auditEvents: AuditEvent[];
 }
 
 export interface LedgerEntry {
   id: string;
   accountId: string;
+  relatedAccountId: string | null;
   projectId: string | null;
   docType: string;
   docId: string;
@@ -128,6 +131,9 @@ export interface LedgerEntry {
   currency: Currency;
   description: string | null;
   createdAt: string;
+  isEffective: boolean;
+  cancelledAt: string | null;
+  replacedByDocId: string | null;
 }
 
 export interface StockMovement {
@@ -141,6 +147,19 @@ export interface StockMovement {
   docDate: string;
   qtyIn: number;
   qtyOut: number;
+  createdAt: string;
+  isEffective: boolean;
+  cancelledAt: string | null;
+  replacedByDocId: string | null;
+}
+
+export interface AuditEvent {
+  id: string;
+  actorUserId: string | null;
+  entity: string;
+  entityId: string;
+  action: string;
+  payload: DataRecord | null;
   createdAt: string;
 }
 
@@ -215,4 +234,11 @@ export interface SettingsRole {
   description?: string | null;
   isSystem?: boolean;
   userCount?: number;
+}
+
+export interface PeriodLockConfig {
+  lockDate: string | null;
+  isActive: boolean;
+  updatedAt: string | null;
+  updatedByUserId: string | null;
 }
