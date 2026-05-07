@@ -1,0 +1,1768 @@
+import {
+  Currency as DbCurrency,
+  DeliveryDirection as DbDeliveryDirection,
+  DeliveryMergeRole as DbDeliveryMergeRole,
+  DocumentStatus as DbDocumentStatus,
+  InvoiceKind as DbInvoiceKind,
+  InvoiceType as DbInvoiceType,
+  ReceiptKind as DbReceiptKind,
+  type Prisma,
+} from "@prisma/client";
+import { randomUUID } from "node:crypto";
+
+import type {
+  Currency,
+  DataRecord,
+  DocumentDetail,
+  DocumentEntity,
+  DocumentPayload,
+  InvoiceMetrics,
+  LedgerEntry,
+  ListQuery,
+  PaginatedResult,
+  StockMovement,
+} from "./contracts";
+import {
+  cleanRecord,
+  currency,
+  dataValue,
+  dateString,
+  isoString,
+  nullableString,
+  number,
+  roundMinor,
+  text,
+  toDate,
+  today,
+} from "./db-shared";
+import { camelToSnake } from "./helpers";
+import { prisma } from "@/server/db";
+
+type Tx = Prisma.TransactionClient;
+
+const documentEntities = new Set<DocumentEntity>([
+  "deliveryNotes",
+  "invoices",
+  "receipts",
+  "transfers",
+]);
+
+const docCodes = {
+  DELIVERY_NOTE_IN: "IRG",
+  DELIVERY_NOTE_OUT: "IRC",
+  DELIVERY_NOTE_MERGED_RESULT_IN: "BIRG",
+  DELIVERY_NOTE_MERGED_RESULT_OUT: "BIRC",
+  DELIVERY_NOTE_MERGED_SOURCE_IN: "IIRG",
+  DELIVERY_NOTE_MERGED_SOURCE_OUT: "IIRC",
+  PURCHASE_INVOICE_STANDARD: "AF",
+  PURCHASE_INVOICE_STAR: "AF",
+  RECEIPT_COLLECTION: "TAH",
+  RECEIPT_PAYMENT: "ODM",
+  SALES_INVOICE_STANDARD: "SF",
+  SALES_INVOICE_STAR: "SF",
+  TRANSFER: "VIR",
+} as const;
+
+export function isDbDocumentEntity(entity: string): entity is DocumentEntity {
+  return documentEntities.has(entity as DocumentEntity);
+}
+
+export async function listDbDocuments(
+  entity: DocumentEntity,
+  query: ListQuery = {},
+): Promise<PaginatedResult<DataRecord>> {
+  const page = Math.max(1, Number(query.page ?? 1));
+  const pageSize = Math.min(100, Math.max(5, Number(query.pageSize ?? 20)));
+  const rows = await filterDocumentRows(entity, await listAllHeaders(entity), query);
+  const start = (page - 1) * pageSize;
+
+  return {
+    items: rows.slice(start, start + pageSize),
+    page,
+    pageSize,
+    total: rows.length,
+  };
+}
+
+export async function getDbDocument(
+  entity: DocumentEntity,
+  id: string,
+): Promise<DocumentDetail<DataRecord> | null> {
+  return getDocumentWithTx(prisma as unknown as Tx, entity, id);
+}
+
+export async function saveDbDocumentDraft(
+  entity: DocumentEntity,
+  payload: DocumentPayload,
+) {
+  return prisma.$transaction(async (tx) => {
+    const id = typeof payload.id === "string" && payload.id ? payload.id : randomUUID();
+    const existing = await findHeader(tx, entity, id);
+
+    if (existing?.status === "VOID") {
+      throw new Error("Voided documents cannot be edited");
+    }
+
+    if (existing?.status === "APPROVED" && !payload.editReason) {
+      throw new Error("Editing an approved document requires an edit reason");
+    }
+
+    const status = existing?.status === "APPROVED" ? "APPROVED" : "DRAFT";
+    const nextHeader = cleanRecord({
+      ...(existing ?? {}),
+      ...defaultsFor(entity),
+      ...normalizeDocumentPayload(payload),
+      doc_no: existing?.doc_no ?? draftDocNo(id),
+      id,
+      status,
+    });
+
+    await assertDocumentParityWithTx(tx, entity, nextHeader, payload.lines ?? []);
+    await reserveInvoiceDraftNumber(tx, entity, id, nextHeader);
+
+    const nextLines = normalizeLines(entity, id, payload.lines ?? []);
+
+    if (entity === "invoices") {
+      applyInvoiceTotals(nextHeader, nextLines);
+    }
+
+    await upsertHeader(tx, entity, id, nextHeader);
+    await replaceLines(tx, entity, id, nextLines);
+
+    if (existing?.status === "APPROVED") {
+      await unpostDocument(tx, id);
+      await postDocument(tx, entity, nextHeader, nextLines);
+      await recordRevision(
+        tx,
+        documentType(entity, nextHeader),
+        id,
+        String(payload.editReason),
+        nextHeader,
+      );
+    }
+
+    await recordAudit(tx, entity, id, existing ? "UPDATE_DRAFT" : "CREATE_DRAFT", nextHeader);
+
+    return getDocumentWithTx(tx, entity, id);
+  });
+}
+
+export async function approveDbDocument(entity: DocumentEntity, id: string) {
+  return prisma.$transaction(async (tx) => {
+    const header = await findHeader(tx, entity, id);
+
+    if (!header) {
+      throw new Error("Document not found");
+    }
+
+    if (header.status === "VOID") {
+      throw new Error("Cannot approve a voided document");
+    }
+
+    if (header.status === "APPROVED") {
+      return getDocumentWithTx(tx, entity, id);
+    }
+
+    const lines = await getLines(tx, entity, id);
+
+    await assertDocumentParityWithTx(tx, entity, header, lines);
+    validateApproval(entity, header, lines);
+
+    const docType = documentType(entity, header);
+    const docNo = String(header.doc_no).startsWith("DRAFT-")
+      ? await allocateDocumentNumber(tx, docType, id, String(header.doc_date))
+      : String(header.doc_no);
+    const nextHeader = {
+      ...header,
+      actual_doc_no:
+        entity === "invoices" && header.invoice_type === "STAR"
+          ? docNo
+          : header.actual_doc_no,
+      approved_at: new Date().toISOString(),
+      doc_no: docNo,
+      status: "APPROVED",
+    };
+
+    await upsertHeader(tx, entity, id, nextHeader);
+    await unpostDocument(tx, id);
+    await postDocument(tx, entity, nextHeader, lines);
+    await recordAudit(tx, entity, id, "APPROVE", nextHeader);
+
+    return getDocumentWithTx(tx, entity, id);
+  });
+}
+
+export async function voidDbDocument(
+  entity: DocumentEntity,
+  id: string,
+  reason: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    const header = await findHeader(tx, entity, id);
+
+    if (!header) {
+      throw new Error("Document not found");
+    }
+
+    if (!reason.trim()) {
+      throw new Error("Void reason is required");
+    }
+
+    if (header.status === "VOID") {
+      return getDocumentWithTx(tx, entity, id);
+    }
+
+    if (entity === "deliveryNotes") {
+      await assertDeliveryNoteCanVoid(tx, header);
+    }
+
+    await unpostDocument(tx, id);
+
+    const nextHeader = {
+      ...header,
+      status: "VOID",
+      void_reason: reason,
+      voided_at: new Date().toISOString(),
+    };
+
+    await upsertHeader(tx, entity, id, nextHeader);
+    await recordRevision(tx, documentType(entity, header), id, reason, nextHeader);
+    await recordAudit(tx, entity, id, "VOID", nextHeader);
+
+    return getDocumentWithTx(tx, entity, id);
+  });
+}
+
+export async function getDbInvoiceMetrics(invoiceId: string): Promise<InvoiceMetrics | null> {
+  const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
+
+  if (!invoice) {
+    return null;
+  }
+
+  const lines = await prisma.invoiceLine.findMany({ where: { invoiceId } });
+  const effectiveAt = effectiveDocumentTime(invoiceRecord(invoice));
+  const invoiceCurrency = currency(invoice.currency);
+  let invoiceNetTotalMinor = 0;
+  let invoiceGrossTotalMinor = 0;
+  let costTotalMinor = 0;
+
+  for (const line of lines.map(invoiceLineRecord)) {
+    const base = roundMinor(number(line.quantity) * number(line.unit_price_minor));
+    const vat = roundMinor((base * number(line.vat_rate_bps)) / 10000);
+
+    invoiceNetTotalMinor += base;
+    invoiceGrossTotalMinor += base + vat;
+    costTotalMinor += roundMinor(
+      number(line.quantity) *
+        (await resolveLatestPurchaseCost(text(line.item_id), invoiceCurrency, effectiveAt)),
+    );
+  }
+
+  const profitMinor = invoiceNetTotalMinor - costTotalMinor;
+
+  return {
+    costTotalMinor,
+    invoiceGrossTotalMinor,
+    invoiceNetTotalMinor,
+    marginPercent:
+      invoiceNetTotalMinor === 0
+        ? null
+        : Number(((profitMinor / invoiceNetTotalMinor) * 100).toFixed(2)),
+    profitMinor,
+  };
+}
+
+export async function getAllDbLedgerEntries() {
+  const rows = await prisma.accountLedgerEntry.findMany({
+    orderBy: [{ docDate: "asc" }, { createdAt: "asc" }],
+  });
+
+  return rows.map(ledgerEntryRecord);
+}
+
+export async function getAllDbStockMovements() {
+  const rows = await prisma.stockMovement.findMany({
+    orderBy: [{ docDate: "asc" }, { createdAt: "asc" }],
+  });
+
+  return rows.map(stockMovementRecord);
+}
+
+async function getDocumentWithTx(
+  tx: Tx,
+  entity: DocumentEntity,
+  id: string,
+): Promise<DocumentDetail<DataRecord> | null> {
+  const header = await findHeader(tx, entity, id);
+
+  if (!header) {
+    return null;
+  }
+
+  const [lines, revisions, ledgerEntries, stockMovements] = await Promise.all([
+    getLines(tx, entity, id),
+    tx.documentRevision
+      .findMany({ orderBy: { revisionNo: "asc" }, where: { docId: id } })
+      .then((rows) => rows.map(revisionRecord)),
+    tx.accountLedgerEntry
+      .findMany({ orderBy: { createdAt: "asc" }, where: { docId: id } })
+      .then((rows) => rows.map(ledgerEntryRecord)),
+    tx.stockMovement
+      .findMany({ orderBy: { createdAt: "asc" }, where: { docId: id } })
+      .then((rows) => rows.map(stockMovementRecord)),
+  ]);
+
+  return { header, ledgerEntries, lines, revisions, stockMovements };
+}
+
+async function listAllHeaders(entity: DocumentEntity) {
+  switch (entity) {
+    case "deliveryNotes":
+      return (await prisma.deliveryNote.findMany()).map(deliveryHeaderRecord);
+    case "invoices":
+      return (await prisma.invoice.findMany()).map(invoiceRecord);
+    case "receipts":
+      return (await prisma.receipt.findMany()).map(receiptRecord);
+    case "transfers":
+      return (await prisma.transfer.findMany()).map(transferRecord);
+  }
+}
+
+async function findHeader(tx: Tx, entity: DocumentEntity, id: string) {
+  switch (entity) {
+    case "deliveryNotes": {
+      const row = await tx.deliveryNote.findUnique({ where: { id } });
+
+      return row ? deliveryHeaderRecord(row) : null;
+    }
+    case "invoices": {
+      const row = await tx.invoice.findUnique({ where: { id } });
+
+      return row ? invoiceRecord(row) : null;
+    }
+    case "receipts": {
+      const row = await tx.receipt.findUnique({ where: { id } });
+
+      return row ? receiptRecord(row) : null;
+    }
+    case "transfers": {
+      const row = await tx.transfer.findUnique({ where: { id } });
+
+      return row ? transferRecord(row) : null;
+    }
+  }
+}
+
+async function getLines(tx: Tx, entity: DocumentEntity, id: string) {
+  if (entity === "deliveryNotes") {
+    const rows = await tx.deliveryNoteLine.findMany({
+      orderBy: { id: "asc" },
+      where: { deliveryNoteId: id },
+    });
+
+    return rows.map(deliveryLineRecord);
+  }
+
+  if (entity === "invoices") {
+    const rows = await tx.invoiceLine.findMany({
+      orderBy: { id: "asc" },
+      where: { invoiceId: id },
+    });
+
+    return rows.map(invoiceLineRecord);
+  }
+
+  return [];
+}
+
+async function upsertHeader(
+  tx: Tx,
+  entity: DocumentEntity,
+  id: string,
+  header: DataRecord,
+) {
+  switch (entity) {
+    case "deliveryNotes":
+      await tx.deliveryNote.upsert({
+        create: {
+          accountId: text(header.account_id),
+          actualDocNo: nullableString(header.actual_doc_no),
+          approvedAt: optionalDate(header.approved_at),
+          description: nullableString(header.description),
+          direction: dbDeliveryDirection(header.direction),
+          docDate: toDate(header.doc_date),
+          docNo: text(header.doc_no),
+          id,
+          isReturn: header.is_return === true,
+          mergeRole: dbDeliveryMergeRole(header.merge_role),
+          projectId: nullableString(header.project_id),
+          status: dbDocumentStatus(header.status),
+          voidReason: nullableString(header.void_reason),
+          voidedAt: optionalDate(header.voided_at),
+          warehouseId: text(header.warehouse_id),
+        },
+        update: {
+          accountId: text(header.account_id),
+          actualDocNo: nullableString(header.actual_doc_no),
+          approvedAt: optionalDate(header.approved_at),
+          description: nullableString(header.description),
+          direction: dbDeliveryDirection(header.direction),
+          docDate: toDate(header.doc_date),
+          docNo: text(header.doc_no),
+          isReturn: header.is_return === true,
+          mergeRole: dbDeliveryMergeRole(header.merge_role),
+          projectId: nullableString(header.project_id),
+          status: dbDocumentStatus(header.status),
+          voidReason: nullableString(header.void_reason),
+          voidedAt: optionalDate(header.voided_at),
+          warehouseId: text(header.warehouse_id),
+        },
+        where: { id },
+      });
+      return;
+    case "invoices":
+      await tx.invoice.upsert({
+        create: {
+          accountId: text(header.account_id),
+          actualDocNo: nullableString(header.actual_doc_no),
+          approvedAt: optionalDate(header.approved_at),
+          currency: dbCurrency(header.currency),
+          description: nullableString(header.description),
+          discountBps: number(header.discount_bps),
+          docDate: toDate(header.doc_date),
+          docNo: text(header.doc_no),
+          documentTotalMinor: number(header.document_total_minor),
+          exchangeRate: number(header.exchange_rate) || 1,
+          id,
+          invoiceKind: dbInvoiceKind(header.invoice_kind),
+          invoiceType: dbInvoiceType(header.invoice_type),
+          netTotalMinor: number(header.net_total_minor),
+          projectId: nullableString(header.project_id),
+          status: dbDocumentStatus(header.status),
+          vatTotalMinor: number(header.vat_total_minor),
+          voidReason: nullableString(header.void_reason),
+          voidedAt: optionalDate(header.voided_at),
+          warehouseId: nullableString(header.warehouse_id),
+        },
+        update: {
+          accountId: text(header.account_id),
+          actualDocNo: nullableString(header.actual_doc_no),
+          approvedAt: optionalDate(header.approved_at),
+          currency: dbCurrency(header.currency),
+          description: nullableString(header.description),
+          discountBps: number(header.discount_bps),
+          docDate: toDate(header.doc_date),
+          docNo: text(header.doc_no),
+          documentTotalMinor: number(header.document_total_minor),
+          exchangeRate: number(header.exchange_rate) || 1,
+          invoiceKind: dbInvoiceKind(header.invoice_kind),
+          invoiceType: dbInvoiceType(header.invoice_type),
+          netTotalMinor: number(header.net_total_minor),
+          projectId: nullableString(header.project_id),
+          status: dbDocumentStatus(header.status),
+          vatTotalMinor: number(header.vat_total_minor),
+          voidReason: nullableString(header.void_reason),
+          voidedAt: optionalDate(header.voided_at),
+          warehouseId: nullableString(header.warehouse_id),
+        },
+        where: { id },
+      });
+      return;
+    case "receipts":
+      await tx.receipt.upsert({
+        create: {
+          accountId: text(header.account_id),
+          amountMinor: number(header.amount_minor),
+          approvedAt: optionalDate(header.approved_at),
+          currency: dbCurrency(header.currency),
+          description: nullableString(header.description),
+          docDate: toDate(header.doc_date),
+          docNo: text(header.doc_no),
+          id,
+          projectId: nullableString(header.project_id),
+          receiptKind: dbReceiptKind(header.receipt_kind),
+          status: dbDocumentStatus(header.status),
+          voidReason: nullableString(header.void_reason),
+          voidedAt: optionalDate(header.voided_at),
+        },
+        update: {
+          accountId: text(header.account_id),
+          amountMinor: number(header.amount_minor),
+          approvedAt: optionalDate(header.approved_at),
+          currency: dbCurrency(header.currency),
+          description: nullableString(header.description),
+          docDate: toDate(header.doc_date),
+          docNo: text(header.doc_no),
+          projectId: nullableString(header.project_id),
+          receiptKind: dbReceiptKind(header.receipt_kind),
+          status: dbDocumentStatus(header.status),
+          voidReason: nullableString(header.void_reason),
+          voidedAt: optionalDate(header.voided_at),
+        },
+        where: { id },
+      });
+      return;
+    case "transfers":
+      await tx.transfer.upsert({
+        create: {
+          amountMinor: number(header.amount_minor),
+          approvedAt: optionalDate(header.approved_at),
+          crossRate: number(header.cross_rate) || 1,
+          currency: dbCurrency(header.currency),
+          description: nullableString(header.description),
+          docDate: toDate(header.doc_date),
+          docNo: text(header.doc_no),
+          fromAccountId: text(header.from_account_id),
+          id,
+          projectId: nullableString(header.project_id),
+          status: dbDocumentStatus(header.status),
+          targetAmountMinor: nullableNumber(header.target_amount_minor),
+          toAccountId: text(header.to_account_id),
+          voidReason: nullableString(header.void_reason),
+          voidedAt: optionalDate(header.voided_at),
+        },
+        update: {
+          amountMinor: number(header.amount_minor),
+          approvedAt: optionalDate(header.approved_at),
+          crossRate: number(header.cross_rate) || 1,
+          currency: dbCurrency(header.currency),
+          description: nullableString(header.description),
+          docDate: toDate(header.doc_date),
+          docNo: text(header.doc_no),
+          fromAccountId: text(header.from_account_id),
+          projectId: nullableString(header.project_id),
+          status: dbDocumentStatus(header.status),
+          targetAmountMinor: nullableNumber(header.target_amount_minor),
+          toAccountId: text(header.to_account_id),
+          voidReason: nullableString(header.void_reason),
+          voidedAt: optionalDate(header.voided_at),
+        },
+        where: { id },
+      });
+  }
+}
+
+async function replaceLines(
+  tx: Tx,
+  entity: DocumentEntity,
+  documentId: string,
+  lines: DataRecord[],
+) {
+  if (entity === "deliveryNotes") {
+    await tx.deliveryNoteLine.deleteMany({ where: { deliveryNoteId: documentId } });
+
+    if (lines.length) {
+      await tx.deliveryNoteLine.createMany({
+        data: lines.map((line) => ({
+          currency: dbCurrency(line.currency),
+          deliveryNoteId: documentId,
+          description: nullableString(line.description),
+          grossTotalMinor: number(line.gross_total_minor),
+          id: text(line.id),
+          itemId: text(line.item_id),
+          lineTotalMinor: number(line.line_total_minor),
+          netTotalMinor: number(line.net_total_minor),
+          quantity: number(line.quantity),
+          unitPriceMinor: number(line.unit_price_minor),
+          vatRateBps: number(line.vat_rate_bps),
+          vatTotalMinor: number(line.vat_total_minor),
+        })),
+      });
+    }
+  }
+
+  if (entity === "invoices") {
+    await tx.invoiceLine.deleteMany({ where: { invoiceId: documentId } });
+
+    if (lines.length) {
+      await tx.invoiceLine.createMany({
+        data: lines.map((line) => ({
+          deliveryNoteLineId: nullableString(line.delivery_note_line_id),
+          description: nullableString(line.description),
+          discountBps: number(line.discount_bps),
+          grossTotalMinor: number(line.gross_total_minor),
+          id: text(line.id),
+          invoiceId: documentId,
+          itemId: text(line.item_id),
+          lineTotalMinor: number(line.line_total_minor),
+          netTotalMinor: number(line.net_total_minor),
+          quantity: number(line.quantity),
+          sourceDeliveryLineIds: Array.isArray(line.source_delivery_line_ids)
+            ? line.source_delivery_line_ids.map((value) => String(value))
+            : [],
+          unitPriceMinor: number(line.unit_price_minor),
+          vatRateBps: number(line.vat_rate_bps),
+          vatTotalMinor: number(line.vat_total_minor),
+        })),
+      });
+    }
+  }
+}
+
+function normalizeDocumentPayload(payload: DocumentPayload) {
+  const normalized: DataRecord = {};
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (
+      key === "id" ||
+      key === "lines" ||
+      key === "editReason" ||
+      typeof value === "undefined"
+    ) {
+      continue;
+    }
+
+    normalized[camelToSnake(key)] = dataValue(value);
+  }
+
+  return normalized;
+}
+
+function normalizeLines(
+  entity: DocumentEntity,
+  documentId: string,
+  lines: NonNullable<DocumentPayload["lines"]>,
+) {
+  if (entity === "receipts" || entity === "transfers") {
+    return [];
+  }
+
+  return lines.map((line) => {
+    const quantity = number(line.quantity ?? line.qty);
+    const unitPriceMinor = number(line.unitPriceMinor);
+    const discountBps = number(line.discountBps);
+    const vatRateBps = number(line.vatRateBps);
+    const sourceDeliveryLineIds = getInvoiceSourceDeliveryLineIds(line);
+    const netTotalMinor = roundMinor(quantity * unitPriceMinor * (1 - discountBps / 10000));
+    const vatTotalMinor = roundMinor(netTotalMinor * (vatRateBps / 10000));
+    const grossTotalMinor = netTotalMinor + vatTotalMinor;
+
+    return {
+      currency: currency(line.currency),
+      delivery_note_line_id:
+        typeof line.deliveryNoteLineId === "string" ? line.deliveryNoteLineId : null,
+      description: typeof line.description === "string" ? line.description : null,
+      gross_total_minor: grossTotalMinor,
+      id: line.id ?? randomUUID(),
+      item_id: line.itemId ?? null,
+      line_total_minor: grossTotalMinor,
+      net_total_minor: netTotalMinor,
+      [parentKey(entity)]: documentId,
+      quantity,
+      source_delivery_line_ids: sourceDeliveryLineIds,
+      unit_price_minor: unitPriceMinor,
+      vat_rate_bps: vatRateBps,
+      vat_total_minor: vatTotalMinor,
+    } satisfies DataRecord;
+  });
+}
+
+function applyInvoiceTotals(header: DataRecord, lines: DataRecord[]) {
+  const totals = computeInvoiceTotals(lines, number(header.discount_bps));
+
+  header.document_total_minor = totals.documentTotalMinor;
+  header.net_total_minor = totals.netTotalMinor;
+  header.vat_total_minor = totals.vatTotalMinor;
+}
+
+function validateApproval(entity: DocumentEntity, header: DataRecord, lines: DataRecord[]) {
+  if (["deliveryNotes", "invoices", "receipts"].includes(entity) && !header.account_id) {
+    throw new Error("Account is required");
+  }
+
+  if (
+    ["deliveryNotes", "invoices"].includes(entity) &&
+    !String(header.actual_doc_no ?? "").trim()
+  ) {
+    throw new Error("Gercek evrak numarasi zorunludur");
+  }
+
+  if (["deliveryNotes", "invoices"].includes(entity) && lines.length === 0) {
+    throw new Error("At least one line is required");
+  }
+
+  if (entity === "deliveryNotes" && !header.warehouse_id) {
+    throw new Error("Depo secimi zorunludur");
+  }
+
+  if (entity === "invoices") {
+    const hasDirectInvoiceLines = lines.some((line) => !hasDeliveryLink(line));
+
+    if (header.invoice_kind === "SALES" && hasDirectInvoiceLines && !header.warehouse_id) {
+      throw new Error("Depo secimi zorunludur");
+    }
+  }
+
+  if (entity === "receipts" && number(header.amount_minor) <= 0) {
+    throw new Error("Receipt amount must be greater than zero");
+  }
+
+  if (entity === "transfers") {
+    if (!header.from_account_id || !header.to_account_id) {
+      throw new Error("Transfer accounts are required");
+    }
+
+    if (header.from_account_id === header.to_account_id) {
+      throw new Error("Transfer accounts must be different");
+    }
+
+    if (number(header.amount_minor) <= 0) {
+      throw new Error("Transfer amount must be greater than zero");
+    }
+  }
+}
+
+async function postDocument(
+  tx: Tx,
+  entity: DocumentEntity,
+  header: DataRecord,
+  lines: DataRecord[],
+) {
+  const docType = documentType(entity, header);
+  const docNo = String(header.doc_no);
+  const docDate = toDate(header.doc_date);
+
+  if (entity === "deliveryNotes") {
+    const stockDirection = resolveDeliveryStockDirection(header);
+
+    await tx.stockMovement.createMany({
+      data: lines.map((line) => ({
+        docDate,
+        docId: String(header.id),
+        docNo,
+        docType,
+        itemId: String(line.item_id),
+        projectId: nullableString(header.project_id),
+        qtyIn: stockDirection === "IN" ? number(line.quantity) : 0,
+        qtyOut: stockDirection === "OUT" ? number(line.quantity) : 0,
+        warehouseId: String(header.warehouse_id),
+      })),
+    });
+
+    return;
+  }
+
+  if (entity === "invoices") {
+    const totalMinor = number(header.document_total_minor);
+    const isSales = header.invoice_kind === "SALES";
+
+    await tx.accountLedgerEntry.create({
+      data: {
+        accountId: String(header.account_id),
+        creditMinor: isSales ? 0 : totalMinor,
+        currency: currency(header.currency),
+        debitMinor: isSales ? totalMinor : 0,
+        description: isSales ? "Satis faturasi" : "Alis faturasi",
+        docDate,
+        docId: String(header.id),
+        docNo,
+        docType,
+        projectId: nullableString(header.project_id),
+      },
+    });
+
+    if (header.warehouse_id) {
+      const directLines = lines.filter((line) => !hasDeliveryLink(line));
+
+      if (directLines.length) {
+        await tx.stockMovement.createMany({
+          data: directLines.map((line) => ({
+            docDate,
+            docId: String(header.id),
+            docNo,
+            docType,
+            itemId: String(line.item_id),
+            projectId: nullableString(header.project_id),
+            qtyIn: isSales ? 0 : number(line.quantity),
+            qtyOut: isSales ? number(line.quantity) : 0,
+            warehouseId: String(header.warehouse_id),
+          })),
+        });
+      }
+    }
+
+    return;
+  }
+
+  if (entity === "receipts") {
+    const isPayment = header.receipt_kind === "PAYMENT";
+
+    await tx.accountLedgerEntry.create({
+      data: {
+        accountId: String(header.account_id),
+        creditMinor: isPayment ? 0 : number(header.amount_minor),
+        currency: currency(header.currency),
+        debitMinor: isPayment ? number(header.amount_minor) : 0,
+        description: nullableString(header.description) ?? String(header.receipt_kind),
+        docDate,
+        docId: String(header.id),
+        docNo,
+        docType,
+        projectId: nullableString(header.project_id),
+      },
+    });
+
+    return;
+  }
+
+  await tx.accountLedgerEntry.createMany({
+    data: [
+      {
+        accountId: String(header.from_account_id),
+        creditMinor: number(header.amount_minor),
+        currency: currency(header.currency),
+        debitMinor: 0,
+        description: nullableString(header.description) ?? "Transfer out",
+        docDate,
+        docId: String(header.id),
+        docNo,
+        docType,
+        projectId: null,
+      },
+      {
+        accountId: String(header.to_account_id),
+        creditMinor: 0,
+        currency: currency(header.currency),
+        debitMinor: resolveTransferTargetAmount(header),
+        description: nullableString(header.description) ?? "Transfer in",
+        docDate,
+        docId: String(header.id),
+        docNo,
+        docType,
+        projectId: null,
+      },
+    ],
+  });
+}
+
+async function unpostDocument(tx: Tx, id: string) {
+  await tx.accountLedgerEntry.deleteMany({ where: { docId: id } });
+  await tx.stockMovement.deleteMany({ where: { docId: id } });
+}
+
+async function assertDocumentParityWithTx(
+  tx: Tx,
+  entity: DocumentEntity,
+  header: DataRecord,
+  lines: DataRecord[] | NonNullable<DocumentPayload["lines"]>,
+) {
+  if (entity === "deliveryNotes" || entity === "invoices" || entity === "receipts") {
+    const accountId = text(header.account_id);
+
+    if (!accountId) {
+      return;
+    }
+
+    const account = await tx.account.findUnique({ where: { id: accountId } });
+    const expectedCurrency = currency(account?.currency);
+
+    if (header.project_id) {
+      const project = await tx.project.findUnique({ where: { id: text(header.project_id) } });
+
+      if (project && project.accountId !== accountId) {
+        throw new Error("Secilen proje bu cariye bagli degil");
+      }
+    }
+
+    if (entity === "invoices" || entity === "receipts") {
+      if (currency(header.currency) !== expectedCurrency) {
+        throw new Error(currencyLockMessage(expectedCurrency));
+      }
+
+      return;
+    }
+
+    for (const line of lines) {
+      const lineCurrency = "currency" in line ? line.currency : undefined;
+
+      if (currency(lineCurrency) !== expectedCurrency) {
+        throw new Error(currencyLockMessage(expectedCurrency));
+      }
+    }
+
+    return;
+  }
+
+  const fromAccount = await tx.account.findUnique({
+    where: { id: text(header.from_account_id) },
+  });
+  const toAccount = await tx.account.findUnique({
+    where: { id: text(header.to_account_id) },
+  });
+  const fromCurrency = currency(fromAccount?.currency);
+
+  if (currency(header.currency) !== fromCurrency) {
+    throw new Error(currencyLockMessage(fromCurrency));
+  }
+
+  if (toAccount && currency(toAccount.currency) !== fromCurrency) {
+    if (
+      number(header.cross_rate) <= 0 &&
+      number(header.target_amount_minor) <= 0
+    ) {
+      throw new Error("Farkli dovizli virman icin capraz kur zorunludur");
+    }
+  }
+}
+
+function currencyLockMessage(expectedCurrency: Currency) {
+  return `Cari doviz kuru ${expectedCurrency}. Bu caride sadece ${expectedCurrency} ile islem yapilabilir.`;
+}
+
+function dbCurrency(value: unknown): DbCurrency {
+  return value === "USD"
+    ? DbCurrency.USD
+    : value === "EUR"
+      ? DbCurrency.EUR
+      : value === "GBP"
+        ? DbCurrency.GBP
+        : DbCurrency.TRY;
+}
+
+function dbDeliveryDirection(value: unknown): DbDeliveryDirection {
+  return value === "IN" ? DbDeliveryDirection.IN : DbDeliveryDirection.OUT;
+}
+
+function dbDeliveryMergeRole(value: unknown): DbDeliveryMergeRole {
+  return value === "MERGED_RESULT"
+    ? DbDeliveryMergeRole.MERGED_RESULT
+    : value === "MERGED_SOURCE"
+      ? DbDeliveryMergeRole.MERGED_SOURCE
+      : DbDeliveryMergeRole.NORMAL;
+}
+
+function dbDocumentStatus(value: unknown): DbDocumentStatus {
+  return value === "APPROVED"
+    ? DbDocumentStatus.APPROVED
+    : value === "VOID"
+      ? DbDocumentStatus.VOID
+      : DbDocumentStatus.DRAFT;
+}
+
+function dbInvoiceKind(value: unknown): DbInvoiceKind {
+  return value === "PURCHASE" ? DbInvoiceKind.PURCHASE : DbInvoiceKind.SALES;
+}
+
+function dbInvoiceType(value: unknown): DbInvoiceType {
+  return value === "STAR" ? DbInvoiceType.STAR : DbInvoiceType.STANDARD;
+}
+
+function dbReceiptKind(value: unknown): DbReceiptKind {
+  return value === "PAYMENT" ? DbReceiptKind.PAYMENT : DbReceiptKind.COLLECTION;
+}
+
+async function assertDeliveryNoteCanVoid(tx: Tx, header: DataRecord) {
+  if (String(header.merge_role ?? "NORMAL") === "MERGED_SOURCE") {
+    throw new Error("I-Irsaliyeler iptal edilemez");
+  }
+
+  if (await noteHasActiveInvoiceLink(tx, String(header.id))) {
+    throw new Error("Faturaya bagli irsaliyeler iptal edilemez");
+  }
+}
+
+async function noteHasActiveInvoiceLink(tx: Tx, deliveryNoteId: string) {
+  const invoicedDeliveryNoteIds = await getInvoicedDeliveryNoteIds(tx);
+
+  return invoicedDeliveryNoteIds.has(deliveryNoteId);
+}
+
+async function getInvoicedDeliveryNoteIds(tx: Tx) {
+  const activeInvoices = await tx.invoice.findMany({
+    select: { id: true },
+    where: { status: { not: "VOID" } },
+  });
+  const activeInvoiceIds = activeInvoices.map((invoice) => invoice.id);
+
+  if (!activeInvoiceIds.length) {
+    return new Set<string>();
+  }
+
+  const invoiceLines = await tx.invoiceLine.findMany({
+    where: { invoiceId: { in: activeInvoiceIds } },
+  });
+  const sourceDeliveryLineIds = Array.from(
+    new Set(
+      invoiceLines.flatMap((line) =>
+        getStoredSourceDeliveryLineIds(invoiceLineRecord(line)),
+      ),
+    ),
+  );
+
+  if (!sourceDeliveryLineIds.length) {
+    return new Set<string>();
+  }
+
+  const deliveryLines = await tx.deliveryNoteLine.findMany({
+    select: { deliveryNoteId: true },
+    where: { id: { in: sourceDeliveryLineIds } },
+  });
+
+  return new Set(deliveryLines.map((line) => line.deliveryNoteId));
+}
+
+async function reserveInvoiceDraftNumber(
+  tx: Tx,
+  entity: DocumentEntity,
+  id: string,
+  header: DataRecord,
+) {
+  if (entity !== "invoices") {
+    return;
+  }
+
+  const currentDocNo = String(header.doc_no ?? "");
+
+  if (!currentDocNo || currentDocNo.startsWith("DRAFT-")) {
+    header.doc_no = await allocateDocumentNumber(
+      tx,
+      documentType(entity, header),
+      id,
+      String(header.doc_date),
+    );
+  }
+
+  if (header.invoice_type === "STAR") {
+    header.actual_doc_no = header.doc_no;
+  }
+}
+
+async function allocateDocumentNumber(
+  tx: Tx,
+  docType: string,
+  docId: string,
+  docDate: string,
+) {
+  const date = toDate(docDate);
+  const year = date.getUTCFullYear();
+  const code = docCodes[docType as keyof typeof docCodes];
+
+  if (!code) {
+    throw new Error(`Unsupported document type: ${docType}`);
+  }
+
+  const counter = await tx.documentCounter.upsert({
+    create: { docType: code, nextSeq: 2, year },
+    update: { nextSeq: { increment: 1 } },
+    where: { docType_year: { docType: code, year } },
+  });
+  const seq = counter.nextSeq - 1;
+  const serial = String(seq).padStart(6, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const yy = String(year).slice(-2);
+  const docNo = `${dd}${mm}${yy}_${code}_${serial}`;
+
+  await tx.documentNumberRegistry.create({
+    data: {
+      docId,
+      docNo,
+      docType,
+      status: "ACTIVE",
+    },
+  });
+
+  return docNo;
+}
+
+async function recordRevision(
+  tx: Tx,
+  docType: string,
+  docId: string,
+  reason: string,
+  payload: DataRecord,
+) {
+  const revisionNo = (await tx.documentRevision.count({ where: { docId } })) + 1;
+
+  await tx.documentRevision.create({
+    data: {
+      docId,
+      docType,
+      payload,
+      reason,
+      revisionNo,
+    },
+  });
+}
+
+async function recordAudit(
+  tx: Tx,
+  entity: DocumentEntity,
+  entityId: string,
+  action: string,
+  payload: DataRecord,
+) {
+  await tx.auditEvent.create({
+    data: { action, entity, entityId, payload },
+  });
+}
+
+async function filterDocumentRows(
+  entity: DocumentEntity,
+  rows: DataRecord[],
+  query: ListQuery,
+) {
+  const search = normalize(query.search);
+  let filtered = rows;
+
+  if (query.status) {
+    filtered = filtered.filter((row) => row.status === query.status);
+  }
+
+  if (query.accountId && ["deliveryNotes", "invoices", "receipts"].includes(entity)) {
+    filtered = filtered.filter((row) => row.account_id === query.accountId);
+  }
+
+  if (query.accountId && entity === "transfers") {
+    filtered = filtered.filter(
+      (row) =>
+        row.from_account_id === query.accountId || row.to_account_id === query.accountId,
+    );
+  }
+
+  if (query.projectId && ["deliveryNotes", "invoices", "receipts"].includes(entity)) {
+    filtered = filtered.filter((row) => row.project_id === query.projectId);
+  }
+
+  if (query.warehouseId && ["deliveryNotes", "invoices"].includes(entity)) {
+    filtered = filtered.filter((row) => row.warehouse_id === query.warehouseId);
+  }
+
+  if (query.direction && entity === "deliveryNotes") {
+    filtered = filtered.filter((row) => row.direction === query.direction);
+  }
+
+  if (
+    entity === "deliveryNotes" &&
+    (query.invoiceState || query.onlyOpenForInvoicing)
+  ) {
+    const invoicedDeliveryNoteIds = await getInvoicedDeliveryNoteIds(prisma as unknown as Tx);
+
+    if (query.invoiceState === "INVOICED") {
+      filtered = filtered.filter((row) => invoicedDeliveryNoteIds.has(String(row.id)));
+    }
+
+    if (query.invoiceState === "UNINVOICED" || query.onlyOpenForInvoicing) {
+      filtered = filtered.filter(
+        (row) =>
+          row.status === "APPROVED" && !invoicedDeliveryNoteIds.has(String(row.id)),
+      );
+    }
+  }
+
+  if (query.invoiceKind && entity === "invoices") {
+    filtered = filtered.filter((row) => row.invoice_kind === query.invoiceKind);
+  }
+
+  if (query.dateFrom) {
+    filtered = filtered.filter((row) => String(row.doc_date) >= String(query.dateFrom));
+  }
+
+  if (query.dateTo) {
+    filtered = filtered.filter((row) => String(row.doc_date) <= String(query.dateTo));
+  }
+
+  if (search) {
+    filtered = filtered.filter((row) =>
+      Object.values(row).some((value) => normalize(String(value)).includes(search)),
+    );
+  }
+
+  return filtered.toSorted((left, right) =>
+    String(right.created_at).localeCompare(String(left.created_at)),
+  );
+}
+
+function defaultsFor(entity: DocumentEntity): DataRecord {
+  const common = { doc_date: today(), status: "DRAFT" };
+
+  switch (entity) {
+    case "deliveryNotes":
+      return { ...common, direction: "OUT", is_return: false, merge_role: "NORMAL" };
+    case "invoices":
+      return {
+        ...common,
+        currency: "TRY",
+        discount_bps: 0,
+        invoice_kind: "SALES",
+        invoice_type: "STANDARD",
+      };
+    case "receipts":
+      return { ...common, amount_minor: 0, currency: "TRY", receipt_kind: "COLLECTION" };
+    case "transfers":
+      return { ...common, amount_minor: 0, cross_rate: 1, currency: "TRY" };
+  }
+}
+
+function computeInvoiceTotals(lines: DataRecord[], discountBps: number) {
+  const grossPerLine = lines.map((line) =>
+    roundMinor(number(line.quantity) * number(line.unit_price_minor)),
+  );
+  const totalGross = grossPerLine.reduce((total, value) => total + value, 0);
+  const totalDiscount = roundMinor((totalGross * discountBps) / 10000);
+  const discountShares: number[] = [];
+  let allocated = 0;
+
+  grossPerLine.forEach((gross, index) => {
+    if (index === grossPerLine.length - 1) {
+      discountShares.push(totalDiscount - allocated);
+      return;
+    }
+
+    const share = roundMinor((gross * discountBps) / 10000);
+
+    allocated += share;
+    discountShares.push(share);
+  });
+
+  let netTotalMinor = 0;
+  let vatTotalMinor = 0;
+
+  lines.forEach((line, index) => {
+    const discountedBase = grossPerLine[index] - discountShares[index];
+    const vat = roundMinor((discountedBase * number(line.vat_rate_bps)) / 10000);
+
+    netTotalMinor += discountedBase;
+    vatTotalMinor += vat;
+  });
+
+  return {
+    documentTotalMinor: netTotalMinor + vatTotalMinor,
+    netTotalMinor,
+    vatTotalMinor,
+  };
+}
+
+function getInvoiceSourceDeliveryLineIds(
+  line: Pick<
+    NonNullable<DocumentPayload["lines"]>[number],
+    "deliveryNoteLineId" | "sourceDeliveryLineIds"
+  >,
+) {
+  return Array.from(
+    new Set(
+      [
+        line.deliveryNoteLineId ?? null,
+        ...(Array.isArray(line.sourceDeliveryLineIds) ? line.sourceDeliveryLineIds : []),
+      ]
+        .map((value) => String(value ?? "").trim())
+        .filter((value) => value.length > 0),
+    ),
+  );
+}
+
+function hasDeliveryLink(line: DataRecord) {
+  return getStoredSourceDeliveryLineIds(line).length > 0;
+}
+
+function getStoredSourceDeliveryLineIds(line: DataRecord) {
+  const ids = line.source_delivery_line_ids;
+  const singleId = String(line.delivery_note_line_id ?? "").trim();
+  const allIds = [
+    singleId,
+    ...(Array.isArray(ids) ? ids : typeof ids === "string" ? ids.split("|") : []),
+  ];
+
+  return Array.from(
+    new Set(allIds.map((value) => value.trim()).filter((value) => value.length > 0)),
+  );
+}
+
+function resolveDeliveryStockDirection(header: DataRecord): "IN" | "OUT" {
+  const baseIsInbound = String(header.direction) === "IN";
+  const isReturn = header.is_return === true || Number(header.is_return ?? 0) === 1;
+
+  return baseIsInbound !== isReturn ? "IN" : "OUT";
+}
+
+function resolveTransferTargetAmount(header: DataRecord) {
+  if (typeof header.target_amount_minor === "number") {
+    return header.target_amount_minor;
+  }
+
+  const crossRate = number(header.cross_rate);
+
+  return crossRate > 0
+    ? roundMinor(number(header.amount_minor) * crossRate)
+    : number(header.amount_minor);
+}
+
+async function resolveLatestPurchaseCost(
+  itemId: string,
+  costCurrency: Currency,
+  effectiveAt: string,
+) {
+  return (
+    (await findLatestPurchaseInvoiceCost(itemId, costCurrency, effectiveAt)) ??
+    (await findLatestInboundDeliveryCost(itemId, costCurrency, effectiveAt)) ??
+    0
+  );
+}
+
+async function findLatestPurchaseInvoiceCost(
+  itemId: string,
+  costCurrency: Currency,
+  effectiveAt: string,
+) {
+  const invoices = await prisma.invoice.findMany({
+    where: {
+      currency: costCurrency,
+      invoiceKind: "PURCHASE",
+      status: "APPROVED",
+    },
+  });
+  const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+  const lines = await prisma.invoiceLine.findMany({
+    where: {
+      invoiceId: { in: invoices.map((invoice) => invoice.id) },
+      itemId,
+    },
+  });
+  const candidates = lines
+    .map((line) => {
+      const invoice = invoiceById.get(line.invoiceId);
+
+      return invoice
+        ? {
+            amountMinor: line.unitPriceMinor,
+            effectiveAt: effectiveDocumentTime(invoiceRecord(invoice)),
+            invoice,
+          }
+        : null;
+    })
+    .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
+    .filter((candidate) => candidate.effectiveAt <= effectiveAt)
+    .toSorted((left, right) => {
+      const byEffectiveAt = right.effectiveAt.localeCompare(left.effectiveAt);
+
+      return byEffectiveAt || right.invoice.createdAt.getTime() - left.invoice.createdAt.getTime();
+    });
+
+  return candidates[0]?.amountMinor ?? null;
+}
+
+async function findLatestInboundDeliveryCost(
+  itemId: string,
+  costCurrency: Currency,
+  effectiveAt: string,
+) {
+  const deliveryNotes = await prisma.deliveryNote.findMany({
+    where: { status: "APPROVED" },
+  });
+  const deliveryNoteById = new Map(deliveryNotes.map((note) => [note.id, note]));
+  const lines = await prisma.deliveryNoteLine.findMany({
+    where: {
+      currency: costCurrency,
+      deliveryNoteId: { in: deliveryNotes.map((note) => note.id) },
+      itemId,
+      unitPriceMinor: { gt: 0 },
+    },
+  });
+  const candidates = lines
+    .map((line) => {
+      const deliveryNote = deliveryNoteById.get(line.deliveryNoteId);
+
+      return deliveryNote
+        ? {
+            amountMinor: line.unitPriceMinor,
+            deliveryNote,
+            effectiveAt: effectiveDocumentTime(deliveryHeaderRecord(deliveryNote)),
+          }
+        : null;
+    })
+    .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
+    .filter(
+      (candidate) =>
+        resolveDeliveryStockDirection(deliveryHeaderRecord(candidate.deliveryNote)) === "IN",
+    )
+    .filter((candidate) => candidate.effectiveAt <= effectiveAt)
+    .toSorted((left, right) => {
+      const byEffectiveAt = right.effectiveAt.localeCompare(left.effectiveAt);
+
+      return (
+        byEffectiveAt ||
+        right.deliveryNote.createdAt.getTime() - left.deliveryNote.createdAt.getTime()
+      );
+    });
+
+  return candidates[0]?.amountMinor ?? null;
+}
+
+function effectiveDocumentTime(header: DataRecord) {
+  return typeof header.approved_at === "string" && header.approved_at
+    ? header.approved_at
+    : `${String(header.doc_date)}T23:59:59.999Z`;
+}
+
+function documentType(entity: DocumentEntity, header: DataRecord) {
+  if (entity === "deliveryNotes") {
+    const direction = String(header.direction);
+    const mergeRole = String(header.merge_role ?? "NORMAL");
+
+    if (mergeRole === "MERGED_RESULT") {
+      return direction === "IN"
+        ? "DELIVERY_NOTE_MERGED_RESULT_IN"
+        : "DELIVERY_NOTE_MERGED_RESULT_OUT";
+    }
+
+    if (mergeRole === "MERGED_SOURCE") {
+      return direction === "IN"
+        ? "DELIVERY_NOTE_MERGED_SOURCE_IN"
+        : "DELIVERY_NOTE_MERGED_SOURCE_OUT";
+    }
+
+    return direction === "IN" ? "DELIVERY_NOTE_IN" : "DELIVERY_NOTE_OUT";
+  }
+
+  if (entity === "invoices") {
+    return `${header.invoice_kind === "PURCHASE" ? "PURCHASE" : "SALES"}_INVOICE_${
+      header.invoice_type === "STAR" ? "STAR" : "STANDARD"
+    }`;
+  }
+
+  if (entity === "receipts") {
+    return header.receipt_kind === "PAYMENT" ? "RECEIPT_PAYMENT" : "RECEIPT_COLLECTION";
+  }
+
+  return "TRANSFER";
+}
+
+function parentKey(entity: DocumentEntity) {
+  switch (entity) {
+    case "deliveryNotes":
+      return "delivery_note_id";
+    case "invoices":
+      return "invoice_id";
+    case "receipts":
+      return "receipt_id";
+    case "transfers":
+      return "transfer_id";
+  }
+}
+
+function deliveryHeaderRecord(row: {
+  accountId: string;
+  actualDocNo: string | null;
+  approvedAt: Date | null;
+  createdAt: Date;
+  description: string | null;
+  direction: string;
+  docDate: Date;
+  docNo: string;
+  id: string;
+  isReturn: boolean;
+  mergeRole: string;
+  projectId: string | null;
+  status: string;
+  updatedAt: Date;
+  voidReason?: string | null;
+  voidedAt: Date | null;
+  warehouseId: string;
+}): DataRecord {
+  return {
+    account_id: row.accountId,
+    actual_doc_no: row.actualDocNo,
+    approved_at: row.approvedAt ? isoString(row.approvedAt) : null,
+    created_at: isoString(row.createdAt),
+    description: row.description,
+    direction: row.direction,
+    doc_date: dateString(row.docDate),
+    doc_no: row.docNo,
+    id: row.id,
+    is_return: row.isReturn,
+    merge_role: row.mergeRole,
+    project_id: row.projectId,
+    status: row.status,
+    updated_at: isoString(row.updatedAt),
+    void_reason: row.voidReason ?? null,
+    voided_at: row.voidedAt ? isoString(row.voidedAt) : null,
+    warehouse_id: row.warehouseId,
+  };
+}
+
+function invoiceRecord(row: {
+  accountId: string;
+  actualDocNo: string | null;
+  approvedAt: Date | null;
+  createdAt: Date;
+  currency: string;
+  description: string | null;
+  discountBps: number;
+  docDate: Date;
+  docNo: string;
+  documentTotalMinor: number;
+  exchangeRate: unknown;
+  id: string;
+  invoiceKind: string;
+  invoiceType: string;
+  netTotalMinor: number;
+  projectId: string | null;
+  status: string;
+  updatedAt: Date;
+  vatTotalMinor: number;
+  voidReason?: string | null;
+  voidedAt: Date | null;
+  warehouseId?: string | null;
+}): DataRecord {
+  return {
+    account_id: row.accountId,
+    actual_doc_no: row.actualDocNo,
+    approved_at: row.approvedAt ? isoString(row.approvedAt) : null,
+    created_at: isoString(row.createdAt),
+    currency: row.currency,
+    description: row.description,
+    discount_bps: row.discountBps,
+    doc_date: dateString(row.docDate),
+    doc_no: row.docNo,
+    document_total_minor: row.documentTotalMinor,
+    exchange_rate: number(row.exchangeRate) || 1,
+    id: row.id,
+    invoice_kind: row.invoiceKind,
+    invoice_type: row.invoiceType,
+    net_total_minor: row.netTotalMinor,
+    project_id: row.projectId,
+    status: row.status,
+    updated_at: isoString(row.updatedAt),
+    vat_total_minor: row.vatTotalMinor,
+    void_reason: row.voidReason ?? null,
+    voided_at: row.voidedAt ? isoString(row.voidedAt) : null,
+    warehouse_id: row.warehouseId ?? null,
+  };
+}
+
+function receiptRecord(row: {
+  accountId: string;
+  amountMinor: number;
+  approvedAt: Date | null;
+  createdAt: Date;
+  currency: string;
+  description: string | null;
+  docDate: Date;
+  docNo: string;
+  id: string;
+  projectId: string | null;
+  receiptKind: string;
+  status: string;
+  updatedAt: Date;
+  voidReason?: string | null;
+  voidedAt: Date | null;
+}): DataRecord {
+  return {
+    account_id: row.accountId,
+    amount_minor: row.amountMinor,
+    approved_at: row.approvedAt ? isoString(row.approvedAt) : null,
+    created_at: isoString(row.createdAt),
+    currency: row.currency,
+    description: row.description,
+    doc_date: dateString(row.docDate),
+    doc_no: row.docNo,
+    id: row.id,
+    project_id: row.projectId,
+    receipt_kind: row.receiptKind,
+    status: row.status,
+    updated_at: isoString(row.updatedAt),
+    void_reason: row.voidReason ?? null,
+    voided_at: row.voidedAt ? isoString(row.voidedAt) : null,
+  };
+}
+
+function transferRecord(row: {
+  amountMinor: number;
+  approvedAt: Date | null;
+  createdAt: Date;
+  crossRate?: unknown;
+  currency: string;
+  description: string | null;
+  docDate: Date;
+  docNo: string;
+  fromAccountId: string;
+  id: string;
+  projectId: string | null;
+  status: string;
+  targetAmountMinor?: number | null;
+  toAccountId: string;
+  updatedAt: Date;
+  voidReason?: string | null;
+  voidedAt: Date | null;
+}): DataRecord {
+  return {
+    amount_minor: row.amountMinor,
+    approved_at: row.approvedAt ? isoString(row.approvedAt) : null,
+    created_at: isoString(row.createdAt),
+    cross_rate: number(row.crossRate),
+    currency: row.currency,
+    description: row.description,
+    doc_date: dateString(row.docDate),
+    doc_no: row.docNo,
+    from_account_id: row.fromAccountId,
+    id: row.id,
+    project_id: row.projectId,
+    status: row.status,
+    target_amount_minor: row.targetAmountMinor ?? null,
+    to_account_id: row.toAccountId,
+    updated_at: isoString(row.updatedAt),
+    void_reason: row.voidReason ?? null,
+    voided_at: row.voidedAt ? isoString(row.voidedAt) : null,
+  };
+}
+
+function deliveryLineRecord(row: {
+  currency?: string;
+  deliveryNoteId: string;
+  description: string | null;
+  grossTotalMinor?: number;
+  id: string;
+  itemId: string;
+  lineTotalMinor: number;
+  netTotalMinor?: number;
+  quantity: unknown;
+  unitPriceMinor: number;
+  vatRateBps: number;
+  vatTotalMinor?: number;
+}): DataRecord {
+  return {
+    currency: currency(row.currency),
+    delivery_note_id: row.deliveryNoteId,
+    description: row.description,
+    gross_total_minor: row.grossTotalMinor ?? row.lineTotalMinor,
+    id: row.id,
+    item_id: row.itemId,
+    line_total_minor: row.lineTotalMinor,
+    net_total_minor: row.netTotalMinor ?? row.lineTotalMinor,
+    quantity: number(row.quantity),
+    unit_price_minor: row.unitPriceMinor,
+    vat_rate_bps: row.vatRateBps,
+    vat_total_minor: row.vatTotalMinor ?? 0,
+  };
+}
+
+function invoiceLineRecord(row: {
+  deliveryNoteLineId: string | null;
+  description: string | null;
+  discountBps: number;
+  grossTotalMinor: number;
+  id: string;
+  invoiceId: string;
+  itemId: string;
+  lineTotalMinor?: number;
+  netTotalMinor: number;
+  quantity: unknown;
+  sourceDeliveryLineIds?: string[];
+  unitPriceMinor: number;
+  vatRateBps: number;
+  vatTotalMinor: number;
+}): DataRecord {
+  return {
+    delivery_note_line_id: row.deliveryNoteLineId,
+    description: row.description,
+    discount_bps: row.discountBps,
+    gross_total_minor: row.grossTotalMinor,
+    id: row.id,
+    invoice_id: row.invoiceId,
+    item_id: row.itemId,
+    line_total_minor: row.lineTotalMinor ?? row.grossTotalMinor,
+    net_total_minor: row.netTotalMinor,
+    quantity: number(row.quantity),
+    source_delivery_line_ids: row.sourceDeliveryLineIds ?? [],
+    unit_price_minor: row.unitPriceMinor,
+    vat_rate_bps: row.vatRateBps,
+    vat_total_minor: row.vatTotalMinor,
+  };
+}
+
+function ledgerEntryRecord(row: {
+  accountId: string;
+  createdAt: Date;
+  creditMinor: number;
+  currency: string;
+  debitMinor: number;
+  description: string | null;
+  docDate: Date;
+  docId: string;
+  docNo: string;
+  docType: string;
+  id: string;
+  projectId: string | null;
+}): LedgerEntry {
+  return {
+    accountId: row.accountId,
+    createdAt: isoString(row.createdAt),
+    creditMinor: row.creditMinor,
+    currency: currency(row.currency),
+    debitMinor: row.debitMinor,
+    description: row.description,
+    docDate: dateString(row.docDate),
+    docId: row.docId,
+    docNo: row.docNo,
+    docType: row.docType,
+    id: row.id,
+    projectId: row.projectId,
+  };
+}
+
+function stockMovementRecord(row: {
+  createdAt: Date;
+  docDate: Date;
+  docId: string;
+  docNo: string;
+  docType: string;
+  id: string;
+  itemId: string;
+  projectId: string | null;
+  qtyIn: unknown;
+  qtyOut: unknown;
+  warehouseId: string;
+}): StockMovement {
+  return {
+    createdAt: isoString(row.createdAt),
+    docDate: dateString(row.docDate),
+    docId: row.docId,
+    docNo: row.docNo,
+    docType: row.docType,
+    id: row.id,
+    itemId: row.itemId,
+    projectId: row.projectId,
+    qtyIn: number(row.qtyIn),
+    qtyOut: number(row.qtyOut),
+    warehouseId: row.warehouseId,
+  };
+}
+
+function revisionRecord(row: {
+  createdAt: Date;
+  docId: string;
+  docType: string;
+  editedAt: Date;
+  id: string;
+  reason: string | null;
+  revisionNo: number;
+}): DataRecord {
+  return {
+    created_at: isoString(row.createdAt),
+    doc_id: row.docId,
+    doc_type: row.docType,
+    edited_at: isoString(row.editedAt),
+    id: row.id,
+    reason: row.reason,
+    revision_no: row.revisionNo,
+  };
+}
+
+function optionalDate(value: unknown) {
+  return value ? toDate(value) : null;
+}
+
+function nullableNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function draftDocNo(id: string) {
+  return `DRAFT-${id.slice(0, 8).toUpperCase()}`;
+}
+
+function normalize(value: unknown) {
+  return String(value ?? "")
+    .toLocaleLowerCase("tr-TR")
+    .trim();
+}

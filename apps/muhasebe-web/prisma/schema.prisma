@@ -1,0 +1,412 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Currency {
+  TRY
+  USD
+  EUR
+  GBP
+}
+
+enum AccountKind {
+  CUSTOMER
+  SUPPLIER
+  BOTH
+}
+
+enum InvoiceKind {
+  SALES
+  PURCHASE
+}
+
+enum InvoiceType {
+  STANDARD
+  STAR
+}
+
+enum DeliveryDirection {
+  IN
+  OUT
+}
+
+enum DeliveryMergeRole {
+  NORMAL
+  MERGED_RESULT
+  MERGED_SOURCE
+}
+
+enum ReceiptKind {
+  COLLECTION
+  PAYMENT
+}
+
+enum DocumentStatus {
+  DRAFT
+  APPROVED
+  VOID
+}
+
+enum StockCountStatus {
+  DRAFT
+  FINISHED
+  VOID
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+model DocumentCounter {
+  docType    String   @map("doc_type")
+  year       Int
+  nextSeq    Int      @default(1) @map("next_seq")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@id([docType, year])
+  @@map("document_counters")
+}
+
+model DocumentNumberRegistry {
+  id        String   @id @default(uuid())
+  docType   String   @map("doc_type")
+  docId     String   @map("doc_id")
+  docNo     String   @map("doc_no")
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([docType, docId])
+  @@unique([docType, docNo])
+  @@map("document_number_registry")
+}
+
+model DocumentRevision {
+  id        String   @id @default(uuid())
+  docType   String   @map("doc_type")
+  docId     String   @map("doc_id")
+  revisionNo Int     @default(1) @map("revision_no")
+  reason    String?
+  payload   Json?
+  editedAt  DateTime @default(now()) @map("edited_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([docType, docId])
+  @@map("document_revisions")
+}
+
+model AuditEvent {
+  id        String   @id @default(uuid())
+  entity    String
+  entityId  String   @map("entity_id")
+  action    String
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([entity, entityId])
+  @@map("audit_events")
+}
+
+model Account {
+  id                 String      @id @default(uuid())
+  code               String      @unique
+  name               String
+  accountKind        AccountKind @default(CUSTOMER) @map("account_kind")
+  currency           Currency    @default(TRY)
+  isActive           Boolean     @default(true) @map("is_active")
+  activeBalanceMinor Int         @default(0) @map("active_balance_minor")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  @@map("accounts")
+}
+
+model Project {
+  id        String   @id @default(uuid())
+  accountId String   @map("account_id")
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([accountId])
+  @@map("projects")
+}
+
+model Warehouse {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("warehouses")
+}
+
+model Unit {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("units")
+}
+
+model ItemClass {
+  id        String   @id @default(uuid()) @map("id")
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("item_classes")
+}
+
+model VatRate {
+  id        String   @id @default(uuid())
+  rateBps   Int      @unique @map("rate_bps")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("vat_rates")
+}
+
+model Item {
+  id               String   @id @default(uuid())
+  code             String   @unique
+  name             String
+  unitId           String   @map("unit_id")
+  classId          String   @map("class_id")
+  defaultVatRateId String   @map("default_vat_rate_id")
+  isActive         Boolean  @default(true) @map("is_active")
+  totalStock       Decimal  @default(0) @map("total_stock") @db.Decimal(18, 4)
+  averageCostMinor Int      @default(0) @map("average_cost_minor")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([unitId])
+  @@index([classId])
+  @@index([defaultVatRateId])
+  @@map("items")
+}
+
+model DeliveryNote {
+  id             String             @id @default(uuid())
+  docNo          String             @unique @map("doc_no")
+  actualDocNo    String?            @map("actual_doc_no")
+  direction      DeliveryDirection
+  mergeRole      DeliveryMergeRole  @default(NORMAL) @map("merge_role")
+  isReturn       Boolean            @default(false) @map("is_return")
+  accountId      String             @map("account_id")
+  projectId      String?            @map("project_id")
+  warehouseId    String             @map("warehouse_id")
+  docDate        DateTime           @map("doc_date")
+  status         DocumentStatus     @default(DRAFT)
+  description    String?
+  voidReason     String?            @map("void_reason")
+  approvedAt     DateTime?          @map("approved_at")
+  voidedAt       DateTime?          @map("voided_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  @@index([accountId])
+  @@index([projectId])
+  @@index([warehouseId])
+  @@index([status])
+  @@map("delivery_notes")
+}
+
+model DeliveryNoteLine {
+  id             String  @id @default(uuid())
+  deliveryNoteId String  @map("delivery_note_id")
+  itemId         String  @map("item_id")
+  description    String?
+  quantity       Decimal @db.Decimal(18, 4)
+  unitPriceMinor Int     @default(0) @map("unit_price_minor")
+  currency       Currency @default(TRY)
+  vatRateBps     Int     @default(0) @map("vat_rate_bps")
+  lineTotalMinor Int     @default(0) @map("line_total_minor")
+  netTotalMinor  Int     @default(0) @map("net_total_minor")
+  vatTotalMinor  Int     @default(0) @map("vat_total_minor")
+  grossTotalMinor Int    @default(0) @map("gross_total_minor")
+
+  @@index([deliveryNoteId])
+  @@index([itemId])
+  @@map("delivery_note_lines")
+}
+
+model Invoice {
+  id                 String         @id @default(uuid())
+  docNo              String         @unique @map("doc_no")
+  actualDocNo        String?        @map("actual_doc_no")
+  invoiceKind        InvoiceKind    @map("invoice_kind")
+  invoiceType        InvoiceType    @default(STANDARD) @map("invoice_type")
+  accountId          String         @map("account_id")
+  projectId          String?        @map("project_id")
+  warehouseId        String?        @map("warehouse_id")
+  docDate            DateTime       @map("doc_date")
+  currency           Currency       @default(TRY)
+  exchangeRate       Decimal        @default(1) @map("exchange_rate") @db.Decimal(18, 6)
+  discountBps        Int            @default(0) @map("discount_bps")
+  netTotalMinor      Int            @default(0) @map("net_total_minor")
+  vatTotalMinor      Int            @default(0) @map("vat_total_minor")
+  documentTotalMinor Int            @default(0) @map("document_total_minor")
+  status             DocumentStatus @default(DRAFT)
+  description        String?
+  voidReason         String?        @map("void_reason")
+  approvedAt         DateTime?      @map("approved_at")
+  voidedAt           DateTime?      @map("voided_at")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  @@index([accountId])
+  @@index([projectId])
+  @@index([warehouseId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id                 String  @id @default(uuid())
+  invoiceId          String  @map("invoice_id")
+  deliveryNoteLineId String? @map("delivery_note_line_id")
+  itemId             String  @map("item_id")
+  description        String?
+  quantity           Decimal @db.Decimal(18, 4)
+  unitPriceMinor     Int     @default(0) @map("unit_price_minor")
+  discountBps        Int     @default(0) @map("discount_bps")
+  vatRateBps         Int     @default(0) @map("vat_rate_bps")
+  lineTotalMinor     Int     @default(0) @map("line_total_minor")
+  netTotalMinor      Int     @default(0) @map("net_total_minor")
+  vatTotalMinor      Int     @default(0) @map("vat_total_minor")
+  grossTotalMinor    Int     @default(0) @map("gross_total_minor")
+  sourceDeliveryLineIds String[] @default([]) @map("source_delivery_line_ids")
+
+  @@index([invoiceId])
+  @@index([itemId])
+  @@map("invoice_lines")
+}
+
+model Receipt {
+  id          String         @id @default(uuid())
+  docNo       String         @unique @map("doc_no")
+  receiptKind ReceiptKind    @map("receipt_kind")
+  accountId   String         @map("account_id")
+  projectId   String?        @map("project_id")
+  docDate     DateTime       @map("doc_date")
+  amountMinor Int            @map("amount_minor")
+  currency    Currency       @default(TRY)
+  description String?
+  voidReason String?         @map("void_reason")
+  status      DocumentStatus @default(DRAFT)
+  approvedAt  DateTime?      @map("approved_at")
+  voidedAt    DateTime?      @map("voided_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  @@index([accountId])
+  @@index([projectId])
+  @@index([status])
+  @@map("receipts")
+}
+
+model Transfer {
+  id            String         @id @default(uuid())
+  docNo         String         @unique @map("doc_no")
+  fromAccountId String         @map("from_account_id")
+  toAccountId   String         @map("to_account_id")
+  projectId     String?        @map("project_id")
+  docDate       DateTime       @map("doc_date")
+  amountMinor   Int            @map("amount_minor")
+  currency      Currency       @default(TRY)
+  crossRate     Decimal        @default(1) @map("cross_rate") @db.Decimal(18, 6)
+  targetAmountMinor Int?       @map("target_amount_minor")
+  description   String?
+  voidReason    String?        @map("void_reason")
+  status        DocumentStatus @default(DRAFT)
+  approvedAt    DateTime?      @map("approved_at")
+  voidedAt      DateTime?      @map("voided_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  @@index([fromAccountId])
+  @@index([toAccountId])
+  @@index([status])
+  @@map("transfers")
+}
+
+model StockCount {
+  id          String           @id @default(uuid())
+  docNo       String           @unique @map("doc_no")
+  warehouseId String           @map("warehouse_id")
+  projectId   String?          @map("project_id")
+  docDate     DateTime         @map("doc_date")
+  status      StockCountStatus @default(DRAFT)
+  notes       String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@index([warehouseId])
+  @@index([status])
+  @@map("stock_counts")
+}
+
+model StockCountLine {
+  id           String  @id @default(uuid())
+  stockCountId String  @map("stock_count_id")
+  itemId       String  @map("item_id")
+  expectedQty  Decimal @default(0) @map("expected_qty") @db.Decimal(18, 4)
+  countedQty   Decimal @default(0) @map("counted_qty") @db.Decimal(18, 4)
+  difference   Decimal @default(0) @db.Decimal(18, 4)
+
+  @@index([stockCountId])
+  @@index([itemId])
+  @@map("stock_count_lines")
+}
+
+model AccountLedgerEntry {
+  id          String   @id @default(uuid())
+  accountId   String   @map("account_id")
+  projectId   String?  @map("project_id")
+  docType     String   @map("doc_type")
+  docId       String   @map("doc_id")
+  docNo       String   @map("doc_no")
+  docDate     DateTime @map("doc_date")
+  debitMinor  Int      @default(0) @map("debit_minor")
+  creditMinor Int      @default(0) @map("credit_minor")
+  currency    Currency @default(TRY)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([accountId])
+  @@index([docType, docId])
+  @@map("account_ledger_entries")
+}
+
+model StockMovement {
+  id          String   @id @default(uuid())
+  warehouseId String   @map("warehouse_id")
+  itemId      String   @map("item_id")
+  projectId   String?  @map("project_id")
+  docType     String   @map("doc_type")
+  docId       String   @map("doc_id")
+  docNo       String   @map("doc_no")
+  docDate     DateTime @map("doc_date")
+  qtyIn       Decimal  @default(0) @map("qty_in") @db.Decimal(18, 4)
+  qtyOut      Decimal  @default(0) @map("qty_out") @db.Decimal(18, 4)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([warehouseId])
+  @@index([itemId])
+  @@index([docType, docId])
+  @@map("stock_movements")
+}

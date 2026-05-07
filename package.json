@@ -1,0 +1,10 @@
+{
+  "name": "kagu-erp-web-rebuild-workspace",
+  "private": true,
+  "scripts": {
+    "legacy:inventory": "node scripts/legacy-inventory.mjs",
+    "legacy:inventory:write": "node scripts/legacy-inventory.mjs --write",
+    "legacy:bootstrap:modules": "node scripts/bootstrap-legacy-notes.mjs",
+    "legacy:readiness:write": "node scripts/legacy-readiness.mjs --write"
+  }
+}

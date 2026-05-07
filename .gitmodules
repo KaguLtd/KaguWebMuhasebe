@@ -1,0 +1,3 @@
+[submodule "legacy/source/KAGU-ERP-D1"]
+	path = legacy/source/KAGU-ERP-D1
+	url = https://github.com/KaguLtd/KAGU-ERP-D1.git

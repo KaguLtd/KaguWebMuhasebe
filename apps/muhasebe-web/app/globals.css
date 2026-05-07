@@ -1,0 +1,336 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f3f0ea;
+  --foreground: #161412;
+  --panel: #fcfaf6;
+  --panel-strong: #f1eadf;
+  --line: rgba(106, 95, 84, 0.16);
+  --line-strong: rgba(74, 63, 52, 0.22);
+  --accent: #7b6d5e;
+  --accent-soft: #e7ddd0;
+  --success: #1f6b37;
+  --warning: #8b5b1c;
+  --danger: #991b1b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-panel-strong: var(--panel-strong);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --font-sans: "Segoe UI", Tahoma, sans-serif;
+  --font-mono: "Courier New", Courier, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.65), transparent 28%),
+    linear-gradient(180deg, #f8f5ef 0%, #f1ede6 100%);
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.65), transparent 28%),
+    linear-gradient(180deg, #f8f5ef 0%, #f1ede6 100%);
+  color: var(--foreground);
+  font-family: "Segoe UI", Tahoma, sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.desktop-window {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.58), transparent 45%),
+    linear-gradient(180deg, rgba(248, 244, 237, 0.98) 0%, rgba(252, 250, 246, 0.98) 100%);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 18px 40px rgba(58, 45, 32, 0.08);
+}
+
+.toolbar-button {
+  background: linear-gradient(180deg, rgba(251, 249, 245, 0.95) 0%, rgba(244, 239, 232, 0.98) 100%);
+  border: 1px solid var(--line);
+  color: var(--foreground);
+}
+
+.toolbar-button:hover {
+  background: rgba(241, 234, 223, 0.92);
+}
+
+.status-pill {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.kagu-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.72), transparent 34%),
+    linear-gradient(180deg, #f8f5ef 0%, #f1ede6 100%);
+}
+
+.kagu-sider {
+  border-right: 1px solid var(--line-strong);
+  box-shadow: 12px 0 28px rgba(58, 45, 32, 0.06);
+  overflow: auto;
+}
+
+.kagu-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--foreground);
+}
+
+.kagu-brand-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgba(79, 69, 58, 0.28);
+  background: linear-gradient(135deg, #7b6d5e 0%, #4f453a 100%);
+  color: white;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.kagu-brand strong,
+.kagu-brand span {
+  display: block;
+}
+
+.kagu-brand span {
+  color: var(--muted, #5a534d);
+  font-size: 12px;
+}
+
+.kagu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 72px;
+  height: auto;
+  padding: 14px 22px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 42%),
+    #4f453a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.kagu-header-eyebrow {
+  color: rgba(255, 255, 255, 0.72);
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.kagu-content {
+  padding: 20px;
+}
+
+.kagu-loader {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+}
+
+.kagu-card {
+  border-color: var(--line-strong);
+  box-shadow: 0 16px 34px rgba(58, 45, 32, 0.06);
+}
+
+.kagu-section-kicker {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.kagu-table-toolbar {
+  justify-content: space-between;
+  margin-bottom: 14px;
+  width: 100%;
+}
+
+.kagu-table-toolbar .ant-input-search {
+  max-width: 420px;
+}
+
+.kagu-money {
+  color: #4f453a;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.kagu-drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+  width: 100%;
+}
+
+.kagu-document-form-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 10px 0 18px;
+}
+
+.kagu-document-line-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.kagu-native-select {
+  width: 100%;
+  height: 32px;
+  border: 1px solid #d9d9d9;
+  border-radius: 3px;
+  background: white;
+  padding: 0 10px;
+}
+
+.kagu-route-pending {
+  pointer-events: none;
+}
+
+.kagu-line-table {
+  margin-top: 10px;
+}
+
+.kagu-line-table .ant-table-cell {
+  vertical-align: top;
+}
+
+.kagu-print-page {
+  min-height: 100vh;
+  padding: 28px;
+  background: #ebe4d9;
+}
+
+.kagu-print-sheet {
+  max-width: 1120px;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 26px;
+  background: white;
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 18px 44px rgba(58, 45, 32, 0.12);
+}
+
+.kagu-print-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 2px solid #4f453a;
+  padding-bottom: 18px;
+}
+
+.kagu-print-header h1 {
+  margin: 4px 0;
+  font-size: 28px;
+}
+
+.kagu-print-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.kagu-print-summary strong {
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: #fcfaf6;
+}
+
+.kagu-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.kagu-print-table th,
+.kagu-print-table td {
+  padding: 8px;
+  border: 1px solid #ddd4c7;
+  text-align: left;
+}
+
+.kagu-print-table th {
+  background: #f1eadf;
+}
+
+@media print {
+  html,
+  body {
+    background: white !important;
+  }
+
+  .kagu-print-page {
+    padding: 0;
+    background: white;
+  }
+
+  .kagu-print-sheet {
+    max-width: none;
+    min-height: auto;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .kagu-print-actions {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .kagu-shell {
+    display: block;
+  }
+
+  .kagu-sider {
+    max-width: none !important;
+    min-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .kagu-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .kagu-content {
+    padding: 12px;
+  }
+
+  .kagu-document-form-grid,
+  .kagu-document-line-grid {
+    grid-template-columns: 1fr;
+  }
+}
