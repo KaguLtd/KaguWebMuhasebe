@@ -33,7 +33,7 @@ Root klasorde legacy intake ozetini uretmek icin:
 npm run legacy:inventory:write
 ```
 
-Bu komut [docs/LEGACY_INVENTORY.md](C:\Users\ahmet\OneDrive\Belgeler\New%20project%202\docs\LEGACY_INVENTORY.md)
+Bu komut [docs/LEGACY_INVENTORY.md](docs/LEGACY_INVENTORY.md)
 dosyasini gunceller.
 
 Modul ve rapor capture dosyalarini otomatik acmak icin:
