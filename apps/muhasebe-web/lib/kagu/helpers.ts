@@ -1,4 +1,4 @@
-import type { Currency, LookupEntity } from "./contracts";
+import type { Currency, LookupEntity, LookupItem } from "./contracts";
 
 const numberFormatter = new Intl.NumberFormat("tr-TR", {
   maximumFractionDigits: 2,
@@ -72,6 +72,20 @@ export function humanizeEnum(value: unknown) {
     .split("_")
     .map((part) => `${part.slice(0, 1)}${part.slice(1).toLowerCase()}`)
     .join(" ");
+}
+
+export function selectableLookupOptions(
+  items: LookupItem[] | undefined,
+  currentValue?: unknown,
+) {
+  const currentId = typeof currentValue === "string" ? currentValue : null;
+
+  return (items ?? [])
+    .filter((item) => item.isActive !== false || item.id === currentId)
+    .map((item) => ({
+      label: item.isActive === false ? `${item.label} (Pasif)` : item.label,
+      value: item.id,
+    }));
 }
 
 export const relationLookupByColumn: Partial<Record<string, LookupEntity>> = {

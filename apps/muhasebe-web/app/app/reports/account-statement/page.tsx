@@ -43,7 +43,7 @@ export default async function AccountStatementPrintPage({
       <section className="kagu-print-sheet">
         <header className="kagu-print-header">
           <div>
-            <p className="kagu-section-kicker">KAGU ERP Cari Ekstre</p>
+            <p className="kagu-section-kicker">KAGU Cari Ekstre</p>
             <h1>{accountTitle}</h1>
             <p>
               Tarih araligi: {params.dateFrom ?? "-"} / {params.dateTo ?? "-"}

@@ -139,22 +139,40 @@ export const masterModules: MasterModuleConfig[] = [
     key: "units",
     title: "Birimler",
     entity: "units",
-    columns: [{ key: "name", title: "Birim" }],
-    fields: [{ name: "name", label: "Birim", type: "text", required: true }],
+    columns: [
+      { key: "name", title: "Birim" },
+      { key: "is_active", title: "Durum" },
+    ],
+    fields: [
+      { name: "name", label: "Birim", type: "text", required: true },
+      { name: "isActive", label: "Aktif", type: "switch" },
+    ],
   },
   {
     key: "itemClasses",
     title: "Malzeme Siniflari",
     entity: "itemClasses",
-    columns: [{ key: "name", title: "Sinif" }],
-    fields: [{ name: "name", label: "Sinif", type: "text", required: true }],
+    columns: [
+      { key: "name", title: "Sinif" },
+      { key: "is_active", title: "Durum" },
+    ],
+    fields: [
+      { name: "name", label: "Sinif", type: "text", required: true },
+      { name: "isActive", label: "Aktif", type: "switch" },
+    ],
   },
   {
     key: "vatRates",
     title: "KDV Tanimlari",
     entity: "vatRates",
-    columns: [{ key: "rate_bps", title: "KDV Orani" }],
-    fields: [{ name: "rateBps", label: "KDV Orani", type: "number", required: true, min: 0, step: 1 }],
+    columns: [
+      { key: "rate_bps", title: "KDV Orani" },
+      { key: "is_active", title: "Durum" },
+    ],
+    fields: [
+      { name: "rateBps", label: "KDV Orani", type: "number", required: true, min: 0, step: 1 },
+      { name: "isActive", label: "Aktif", type: "switch" },
+    ],
   },
   {
     key: "items",
@@ -328,5 +346,6 @@ export const workspaceMenu = [
   { key: "dashboard", title: "Dashboard" },
   ...primaryMasterModules.map((module) => ({ key: module.key, title: module.title })),
   ...documentModules.map((module) => ({ key: module.key, title: module.title })),
+  { key: "projectReports", title: "Proje Raporlari" },
   { key: "settings", title: "Ayarlar" },
 ];

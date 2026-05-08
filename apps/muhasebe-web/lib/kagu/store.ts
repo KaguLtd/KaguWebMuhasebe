@@ -42,19 +42,19 @@ const globalForKagu = globalThis as typeof globalThis & {
 function seedStore(): MasterStore {
   return {
     units: [
-      row("unit-adet", { name: "ADET" }),
-      row("unit-kg", { name: "KG" }),
-      row("unit-m", { name: "METRE" }),
+      row("unit-adet", { is_active: true, name: "ADET" }),
+      row("unit-kg", { is_active: true, name: "KG" }),
+      row("unit-m", { is_active: true, name: "METRE" }),
     ],
     itemClasses: [
-      row("class-hammadde", { name: "Hammadde" }),
-      row("class-mamul", { name: "Mamul" }),
-      row("class-yardimci", { name: "Yardimci Malzeme" }),
+      row("class-hammadde", { is_active: true, name: "Hammadde" }),
+      row("class-mamul", { is_active: true, name: "Mamul" }),
+      row("class-yardimci", { is_active: true, name: "Yardimci Malzeme" }),
     ],
     vatRates: [
-      row("vat-0", { rate_bps: 0 }),
-      row("vat-10", { rate_bps: 1000 }),
-      row("vat-20", { rate_bps: 2000 }),
+      row("vat-0", { is_active: true, rate_bps: 0 }),
+      row("vat-10", { is_active: true, rate_bps: 1000 }),
+      row("vat-20", { is_active: true, rate_bps: 2000 }),
     ],
     warehouses: [
       row("warehouse-main", {
@@ -186,6 +186,7 @@ export function getLookups(entity: LookupEntity): LookupItem[] {
         id: text(enriched.id),
         label: formatRateBps(enriched.rate_bps),
         rateBps: number(enriched.rate_bps),
+        isActive: enriched.is_active !== false,
       };
     }
 
@@ -196,6 +197,7 @@ export function getLookups(entity: LookupEntity): LookupItem[] {
         label: code ? `${code} - ${name}` : name,
         currency: text(enriched.currency) as Currency,
         accountKind: text(enriched.account_kind) as LookupItem["accountKind"],
+        isActive: enriched.is_active !== false,
       };
     }
 
@@ -208,6 +210,7 @@ export function getLookups(entity: LookupEntity): LookupItem[] {
         label: code ? `${code} - ${name}` : name,
         accountId: text(enriched.account_id),
         accountCode: text(account?.code),
+        isActive: enriched.is_active !== false,
       };
     }
 
@@ -216,6 +219,7 @@ export function getLookups(entity: LookupEntity): LookupItem[] {
       code,
       label: code ? `${code} - ${name}` : name,
       defaultVatRateBps: number(enriched.default_vat_rate_bps),
+      isActive: enriched.is_active !== false,
     };
   });
 }
@@ -336,12 +340,15 @@ export function saveMaster(entity: MasterEntity, payload: SaveMasterPayload) {
 }
 
 export function deleteMaster(entity: MasterEntity, id: string) {
-  const store = getStore();
-  const previousCount = store[entity].length;
+  const record = getStore()[entity].find((item) => item.id === id);
 
-  store[entity] = store[entity].filter((record) => record.id !== id);
+  if (!record) {
+    return false;
+  }
 
-  return store[entity].length !== previousCount;
+  record.is_active = false;
+
+  return true;
 }
 
 function normalizePayload(entity: MasterEntity, payload: SaveMasterPayload) {
@@ -391,6 +398,9 @@ function defaultsFor(entity: MasterEntity): MasterRecord {
       };
     case "projects":
     case "warehouses":
+    case "units":
+    case "itemClasses":
+    case "vatRates":
     case "items":
       return { is_active: true };
     default:

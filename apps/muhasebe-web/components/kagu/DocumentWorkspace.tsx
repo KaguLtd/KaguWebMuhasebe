@@ -52,6 +52,7 @@ import {
   humanizeEnum,
   parseMoneyToMinor,
   relationLookupByColumn,
+  selectableLookupOptions,
 } from "@/lib/kagu/helpers";
 
 type LookupMap = Partial<Record<LookupEntity, LookupItem[]>>;
@@ -606,10 +607,7 @@ function DocumentListFilters({
           allowClear
           onChange={(value) => updateFilter("accountId", value)}
           optionFilterProp="label"
-          options={(lookups.accounts ?? []).map((item) => ({
-            label: item.label,
-            value: item.id,
-          }))}
+          options={selectableLookupOptions(lookups.accounts)}
           placeholder={module.entity === "transfers" ? "Cari (giris/cikis)" : "Cari"}
           showSearch
           style={{ minWidth: 240 }}
@@ -637,10 +635,7 @@ function DocumentListFilters({
           allowClear
           onChange={(value) => updateFilter("warehouseId", value)}
           optionFilterProp="label"
-          options={(lookups.warehouses ?? []).map((item) => ({
-            label: item.label,
-            value: item.id,
-          }))}
+          options={selectableLookupOptions(lookups.warehouses)}
           placeholder="Depo"
           showSearch
           style={{ minWidth: 200 }}
@@ -1023,10 +1018,12 @@ function renderLineControl(
       <Select
         allowClear
         disabled={context.moduleEntity === "invoices" && context.invoiceType === "STAR"}
-        options={(lookups.vatRates ?? []).map((item) => ({
-          label: item.label,
-          value: (item.rateBps ?? 0) / 100,
-        }))}
+        options={(lookups.vatRates ?? [])
+          .filter((item) => item.isActive !== false)
+          .map((item) => ({
+            label: item.label,
+            value: (item.rateBps ?? 0) / 100,
+          }))}
       />
     );
   }
@@ -1035,10 +1032,7 @@ function renderLineControl(
     const options = field.name === "currency" && context.selectedAccountCurrency
       ? [{ label: context.selectedAccountCurrency, value: context.selectedAccountCurrency }]
       : field.lookupEntity
-      ? (lookups[field.lookupEntity] ?? []).map((item) => ({
-          label: item.label,
-          value: item.id,
-        }))
+      ? selectableLookupOptions(lookups[field.lookupEntity])
       : field.options;
 
     return (
@@ -1343,11 +1337,13 @@ function filterProjectsByAccount(
   projects: LookupItem[],
   account: LookupItem | null,
 ) {
+  const activeProjects = projects.filter((project) => project.isActive !== false);
+
   if (!account) {
-    return projects;
+    return activeProjects;
   }
 
-  return projects.filter(
+  return activeProjects.filter(
     (project) =>
       project.accountId === account.id ||
       (project.accountCode && project.accountCode === account.code),

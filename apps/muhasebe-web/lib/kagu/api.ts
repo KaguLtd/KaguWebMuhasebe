@@ -13,6 +13,11 @@ import type {
   MasterEntity,
   PaginatedResult,
   PeriodLockConfig,
+  ProjectEstimatedMarginReport,
+  ProjectInvoiceListReport,
+  ProjectMaterialUsageReport,
+  ProjectReportFilters,
+  ProjectStockMovementReport,
   SaveMasterPayload,
   SettingsRole,
   SettingsUser,
@@ -180,6 +185,42 @@ export async function fetchItemMovements(itemId: string) {
   return fetchJson<ItemMovementReport>(`/api/master/items/${itemId}/movements`);
 }
 
+export async function fetchProjectStockMovements(
+  projectId: string,
+  query: ProjectReportFilters = {},
+) {
+  return fetchJson<ProjectStockMovementReport>(
+    `/api/reports/projects/${projectId}/stock-movements${querySuffix(query)}`,
+  );
+}
+
+export async function fetchProjectInvoices(
+  projectId: string,
+  query: ProjectReportFilters = {},
+) {
+  return fetchJson<ProjectInvoiceListReport>(
+    `/api/reports/projects/${projectId}/invoices${querySuffix(query)}`,
+  );
+}
+
+export async function fetchProjectMaterialUsage(
+  projectId: string,
+  query: ProjectReportFilters = {},
+) {
+  return fetchJson<ProjectMaterialUsageReport>(
+    `/api/reports/projects/${projectId}/material-usage${querySuffix(query)}`,
+  );
+}
+
+export async function fetchProjectEstimatedMargin(
+  projectId: string,
+  query: ProjectReportFilters = {},
+) {
+  return fetchJson<ProjectEstimatedMarginReport>(
+    `/api/reports/projects/${projectId}/estimated-margin${querySuffix(query)}`,
+  );
+}
+
 export async function loginWithPassword(payload: {
   username: string;
   password: string;
@@ -272,4 +313,16 @@ function parseErrorMessage(responseText: string) {
   } catch {
     return responseText.trim() || null;
   }
+}
+
+function querySuffix(query: Record<string, unknown>) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  return params.size ? `?${params.toString()}` : "";
 }

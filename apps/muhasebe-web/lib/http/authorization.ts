@@ -39,7 +39,16 @@ export const routePermissions = {
   masterWrite(entity: MasterEntity) {
     return [`masters.write`, `masters.${entity}.write`];
   },
-  reportRead(reportKey: "accountStatement" | "itemMovements" | "warehouseInventory") {
+  reportRead(
+    reportKey:
+      | "accountStatement"
+      | "itemMovements"
+      | "warehouseInventory"
+      | "projectStockMovements"
+      | "projectInvoices"
+      | "projectMaterialUsage"
+      | "projectEstimatedMargin",
+  ) {
     switch (reportKey) {
       case "accountStatement":
         return [`reports.read`, `reports.accounts.read`, `reports.accounts.statement.read`];
@@ -47,6 +56,30 @@ export const routePermissions = {
         return [`reports.read`, `reports.items.read`, `reports.items.movements.read`];
       case "warehouseInventory":
         return [`reports.read`, `reports.warehouses.read`, `reports.warehouses.inventory.read`];
+      case "projectStockMovements":
+        return [
+          `reports.read`,
+          `reports.projects.read`,
+          `reports.projects.stock-movements.read`,
+        ];
+      case "projectInvoices":
+        return [
+          `reports.read`,
+          `reports.projects.read`,
+          `reports.projects.invoices.read`,
+        ];
+      case "projectMaterialUsage":
+        return [
+          `reports.read`,
+          `reports.projects.read`,
+          `reports.projects.material-usage.read`,
+        ];
+      case "projectEstimatedMargin":
+        return [
+          `reports.read`,
+          `reports.projects.read`,
+          `reports.projects.estimated-margin.read`,
+        ];
     }
   },
   settingsRolesRead() {

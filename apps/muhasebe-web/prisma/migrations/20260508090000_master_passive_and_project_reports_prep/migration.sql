@@ -1,0 +1,8 @@
+ALTER TABLE "units"
+ADD COLUMN "is_active" BOOLEAN NOT NULL DEFAULT true;
+
+ALTER TABLE "item_classes"
+ADD COLUMN "is_active" BOOLEAN NOT NULL DEFAULT true;
+
+ALTER TABLE "vat_rates"
+ADD COLUMN "is_active" BOOLEAN NOT NULL DEFAULT true;

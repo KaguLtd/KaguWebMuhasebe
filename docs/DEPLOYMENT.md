@@ -34,6 +34,7 @@
 - `/api/health` response `status: "ok"` donmeli.
 - Reverse proxy HTTPS, request size limiti, gzip/brotli ve timeout ayarlari kontrol edilmeli.
 - Backup ve restore testi yapilmadan canli muhasebe verisi alinmamali.
+- Runbook referansi: `docs/BACKUP_RESTORE.md`
 
 ## Workflow Contract
 

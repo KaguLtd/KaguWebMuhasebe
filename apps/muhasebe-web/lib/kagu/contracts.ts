@@ -56,6 +56,7 @@ export interface LookupItem {
   label: string;
   code?: string;
   extra?: string;
+  isActive?: boolean;
   currency?: Currency;
   accountKind?: AccountKind;
   accountId?: string;
@@ -69,6 +70,7 @@ export interface AppSnapshot {
   dbPath: string;
   metrics: Array<{ key: string; label: string; value: number }>;
   dashboard: {
+    // Deprecated for display: use *ByCurrency until a real FX policy exists.
     dailySalesTotalMinor: number;
     weeklySalesTotalMinor: number;
     monthlySalesTotalMinor: number;
@@ -196,6 +198,113 @@ export type ItemMovementRow = StockMovement & {
 export interface ItemMovementReport {
   item: DataRecord;
   rows: ItemMovementRow[];
+}
+
+export interface ProjectReportFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  warehouseId?: string;
+  invoiceKind?: InvoiceKind;
+}
+
+export interface ProjectStockMovementRow extends StockMovement {
+  itemCode: string;
+  itemName: string;
+  warehouseCode: string;
+  warehouseName: string;
+}
+
+export interface ProjectStockMovementSummary {
+  distinctItemCount: number;
+  distinctWarehouseCount: number;
+  movementCount: number;
+  totalQtyIn: number;
+  totalQtyOut: number;
+}
+
+export interface ProjectStockMovementReport {
+  project: DataRecord;
+  summary: ProjectStockMovementSummary;
+  rows: ProjectStockMovementRow[];
+}
+
+export interface ProjectInvoiceRow {
+  id: string;
+  docNo: string;
+  docDate: string;
+  invoiceKind: InvoiceKind;
+  accountId: string;
+  accountLabel: string;
+  warehouseId: string | null;
+  warehouseLabel: string | null;
+  currency: Currency;
+  netTotalMinor: number;
+  vatTotalMinor: number;
+  grossTotalMinor: number;
+  status: DocumentStatus;
+  isEffective: boolean;
+}
+
+export interface ProjectInvoiceSummary {
+  invoiceCount: number;
+  salesCount: number;
+  purchaseCount: number;
+  netTotalsByCurrency: Record<Currency, number>;
+  grossTotalsByCurrency: Record<Currency, number>;
+}
+
+export interface ProjectInvoiceListReport {
+  project: DataRecord;
+  summary: ProjectInvoiceSummary;
+  rows: ProjectInvoiceRow[];
+}
+
+export interface ProjectMaterialUsageRow {
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  unitLabel: string | null;
+  qtyIn: number;
+  qtyOut: number;
+  netUsage: number;
+  movementCount: number;
+}
+
+export interface ProjectMaterialUsageSummary {
+  distinctItemCount: number;
+  totalMovementCount: number;
+}
+
+export interface ProjectMaterialUsageReport {
+  project: DataRecord;
+  summary: ProjectMaterialUsageSummary;
+  rows: ProjectMaterialUsageRow[];
+}
+
+export interface ProjectEstimatedMarginInvoiceRow {
+  id: string;
+  docNo: string;
+  docDate: string;
+  currency: Currency;
+  invoiceNetTotalMinor: number;
+  costTotalMinor: number;
+  profitMinor: number;
+  marginPercent: number | null;
+}
+
+export interface ProjectEstimatedMarginSummary {
+  invoiceCount: number;
+  currency: Currency | null;
+  estimatedCostTotalMinor: number;
+  estimatedGrossProfitMinor: number;
+  estimatedMarginPercent: number | null;
+  salesNetTotalMinor: number;
+}
+
+export interface ProjectEstimatedMarginReport {
+  project: DataRecord;
+  summary: ProjectEstimatedMarginSummary;
+  rows: ProjectEstimatedMarginInvoiceRow[];
 }
 
 export interface InvoiceMetrics {

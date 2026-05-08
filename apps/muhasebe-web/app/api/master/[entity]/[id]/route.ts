@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { requireSessionUser } from "@/lib/auth/server";
 import {
   requireAdminRole,
-  requirePermissions,
   routePermissions,
+  requirePermissions,
 } from "@/lib/http/authorization";
 import { jsonBadRequest } from "@/lib/http/response";
 import {
@@ -53,10 +53,10 @@ export async function DELETE(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Unknown master entity" }, { status: 404 });
     }
 
-    requireAdminRole(user, "Hard delete yalnizca yonetici icin aciktir");
+    requireAdminRole(user, "Kaydi pasife alma yalnizca yonetici icin aciktir");
 
-    return NextResponse.json({ deleted: await deleteDbMaster(entity, id) });
+    return NextResponse.json({ archived: await deleteDbMaster(entity, id) });
   } catch (error) {
-    return jsonBadRequest(error, "Kayit silinemedi");
+    return jsonBadRequest(error, "Kayit pasife alinamadi");
   }
 }

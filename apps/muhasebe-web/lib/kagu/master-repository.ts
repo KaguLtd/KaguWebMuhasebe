@@ -90,6 +90,7 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
 
     return rows.map((row) => ({
       id: row.id,
+      isActive: row.isActive,
       label: formatRateBps(row.rateBps),
       rateBps: row.rateBps,
     }));
@@ -103,6 +104,7 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
       code: row.code,
       currency: row.currency,
       id: row.id,
+      isActive: row.isActive,
       label: `${row.code} - ${row.name}`,
     }));
   }
@@ -119,6 +121,7 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
         accountId: row.accountId,
         code: row.code,
         id: row.id,
+        isActive: row.isActive,
         label: `${row.code} - ${row.name}`,
       };
     });
@@ -134,6 +137,7 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
       code: row.code,
       defaultVatRateBps: row.defaultVatRate.rateBps,
       id: row.id,
+      isActive: row.isActive,
       label: `${row.code} - ${row.name}`,
     }));
   }
@@ -147,6 +151,7 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
     return {
       code,
       id: text(row.id),
+      isActive: row.is_active !== false,
       label: code ? `${code} - ${name}` : name,
     };
   });
@@ -291,7 +296,16 @@ export async function deleteDbMaster(entity: MasterEntity, id: string) {
   await ensureMasterSeeded();
 
   try {
-    await deleteMasterRecord(entity, id);
+    await prisma.$transaction(async (tx) => {
+      const existing = await findMasterRecord(entity, id, tx);
+
+      if (!existing) {
+        throw new Error("Master record not found");
+      }
+
+      await assertCanSetActiveState(tx, entity, existing, false);
+      await setMasterActiveState(tx, entity, id, false);
+    });
 
     return true;
   } catch {
@@ -358,6 +372,11 @@ async function saveDbMasterWithTx(
     code: code ?? normalized.code ?? null,
     id,
   });
+  const nextIsActive = next.is_active !== false;
+
+  if (existing) {
+    await assertCanSetActiveState(tx, entity, existing, nextIsActive);
+  }
 
   const saved = await upsertMasterRecord(tx, entity, id, next);
 
@@ -540,24 +559,24 @@ async function upsertMasterRecord(
     case "units":
       return unitRecord(
         await tx.unit.upsert({
-          create: { id, name: text(record.name) },
-          update: { name: text(record.name) },
+          create: { id, isActive: record.is_active !== false, name: text(record.name) },
+          update: { isActive: record.is_active !== false, name: text(record.name) },
           where: { id },
         }),
       );
     case "itemClasses":
       return itemClassRecord(
         await tx.itemClass.upsert({
-          create: { id, name: text(record.name) },
-          update: { name: text(record.name) },
+          create: { id, isActive: record.is_active !== false, name: text(record.name) },
+          update: { isActive: record.is_active !== false, name: text(record.name) },
           where: { id },
         }),
       );
     case "vatRates":
       return vatRateRecord(
         await tx.vatRate.upsert({
-          create: { id, rateBps: number(record.rate_bps) },
-          update: { rateBps: number(record.rate_bps) },
+          create: { id, isActive: record.is_active !== false, rateBps: number(record.rate_bps) },
+          update: { isActive: record.is_active !== false, rateBps: number(record.rate_bps) },
           where: { id },
         }),
       );
@@ -587,28 +606,33 @@ async function upsertMasterRecord(
   }
 }
 
-async function deleteMasterRecord(entity: MasterEntity, id: string) {
+async function setMasterActiveState(
+  tx: Tx,
+  entity: MasterEntity,
+  id: string,
+  isActive: boolean,
+) {
   switch (entity) {
     case "accounts":
-      await prisma.account.delete({ where: { id } });
+      await tx.account.update({ data: { isActive }, where: { id } });
       return;
     case "projects":
-      await prisma.project.delete({ where: { id } });
+      await tx.project.update({ data: { isActive }, where: { id } });
       return;
     case "warehouses":
-      await prisma.warehouse.delete({ where: { id } });
+      await tx.warehouse.update({ data: { isActive }, where: { id } });
       return;
     case "units":
-      await prisma.unit.delete({ where: { id } });
+      await tx.unit.update({ data: { isActive }, where: { id } });
       return;
     case "itemClasses":
-      await prisma.itemClass.delete({ where: { id } });
+      await tx.itemClass.update({ data: { isActive }, where: { id } });
       return;
     case "vatRates":
-      await prisma.vatRate.delete({ where: { id } });
+      await tx.vatRate.update({ data: { isActive }, where: { id } });
       return;
     case "items":
-      await prisma.item.delete({ where: { id } });
+      await tx.item.update({ data: { isActive }, where: { id } });
   }
 }
 
@@ -648,6 +672,108 @@ async function findMasterLabel(entity: MasterEntity, id: string) {
   return code ? `${code} - ${name}` : name || null;
 }
 
+async function assertCanSetActiveState(
+  tx: Tx,
+  entity: MasterEntity,
+  existing: DataRecord,
+  nextIsActive: boolean,
+) {
+  const currentIsActive = existing.is_active !== false;
+
+  if (nextIsActive || !currentIsActive) {
+    return;
+  }
+
+  switch (entity) {
+    case "accounts": {
+      const balance = await getAccountBalanceMinor(text(existing.id), tx);
+
+      if (balance !== 0) {
+        throw new Error("Bakiyesi olan cari pasife alinamaz");
+      }
+
+      const draftCount = await Promise.all([
+        tx.deliveryNote.count({
+          where: { accountId: text(existing.id), status: "DRAFT" },
+        }),
+        tx.invoice.count({
+          where: { accountId: text(existing.id), status: "DRAFT" },
+        }),
+        tx.receipt.count({
+          where: { accountId: text(existing.id), status: "DRAFT" },
+        }),
+        tx.transfer.count({
+          where: {
+            status: "DRAFT",
+            OR: [
+              { fromAccountId: text(existing.id) },
+              { toAccountId: text(existing.id) },
+            ],
+          },
+        }),
+      ]);
+
+      if (draftCount.some((count) => count > 0)) {
+        throw new Error("Taslak baglantisi olan cari pasife alinamaz");
+      }
+
+      return;
+    }
+    case "warehouses": {
+      const stock = await getWarehouseStockQuantity(text(existing.id), tx);
+
+      if (Math.abs(stock) > 0.000001) {
+        throw new Error("Stok bulunan depo pasife alinamaz");
+      }
+
+      const draftCount = await Promise.all([
+        tx.deliveryNote.count({
+          where: { status: "DRAFT", warehouseId: text(existing.id) },
+        }),
+        tx.invoice.count({
+          where: { status: "DRAFT", warehouseId: text(existing.id) },
+        }),
+        tx.stockCount.count({
+          where: { status: "DRAFT", warehouseId: text(existing.id) },
+        }),
+      ]);
+
+      if (draftCount.some((count) => count > 0)) {
+        throw new Error("Taslak baglantisi olan depo pasife alinamaz");
+      }
+
+      return;
+    }
+    case "items": {
+      const stock = await getItemStockQuantity(text(existing.id), tx);
+
+      if (Math.abs(stock) > 0.000001) {
+        throw new Error("Stogu bulunan malzeme pasife alinamaz");
+      }
+
+      const draftCount = await Promise.all([
+        tx.deliveryNoteLine.count({
+          where: { itemId: text(existing.id), deliveryNote: { status: "DRAFT" } },
+        }),
+        tx.invoiceLine.count({
+          where: { itemId: text(existing.id), invoice: { status: "DRAFT" } },
+        }),
+        tx.stockCountLine.count({
+          where: { itemId: text(existing.id), stockCount: { status: "DRAFT" } },
+        }),
+      ]);
+
+      if (draftCount.some((count) => count > 0)) {
+        throw new Error("Taslak baglantisi olan malzeme pasife alinamaz");
+      }
+
+      return;
+    }
+    default:
+      return;
+  }
+}
+
 async function listCodes(entity: MasterEntity, tx: Tx = prisma) {
   switch (entity) {
     case "accounts":
@@ -663,13 +789,13 @@ async function listCodes(entity: MasterEntity, tx: Tx = prisma) {
   }
 }
 
-async function getAccountBalanceMinor(accountId: string) {
+async function getAccountBalanceMinor(accountId: string, tx: Tx = prisma) {
   const [debit, credit] = await Promise.all([
-    prisma.accountLedgerEntry.aggregate({
+    tx.accountLedgerEntry.aggregate({
       _sum: { debitMinor: true },
       where: { accountId },
     }),
-    prisma.accountLedgerEntry.aggregate({
+    tx.accountLedgerEntry.aggregate({
       _sum: { creditMinor: true },
       where: { accountId },
     }),
@@ -678,10 +804,19 @@ async function getAccountBalanceMinor(accountId: string) {
   return (debit._sum.debitMinor ?? 0) - (credit._sum.creditMinor ?? 0);
 }
 
-async function getItemStockQuantity(itemId: string) {
+async function getItemStockQuantity(itemId: string, tx: Tx = prisma) {
   const [qtyIn, qtyOut] = await Promise.all([
-    prisma.stockMovement.aggregate({ _sum: { qtyIn: true }, where: { itemId } }),
-    prisma.stockMovement.aggregate({ _sum: { qtyOut: true }, where: { itemId } }),
+    tx.stockMovement.aggregate({ _sum: { qtyIn: true }, where: { itemId } }),
+    tx.stockMovement.aggregate({ _sum: { qtyOut: true }, where: { itemId } }),
+  ]);
+
+  return number(qtyIn._sum.qtyIn) - number(qtyOut._sum.qtyOut);
+}
+
+async function getWarehouseStockQuantity(warehouseId: string, tx: Tx = prisma) {
+  const [qtyIn, qtyOut] = await Promise.all([
+    tx.stockMovement.aggregate({ _sum: { qtyIn: true }, where: { warehouseId } }),
+    tx.stockMovement.aggregate({ _sum: { qtyOut: true }, where: { warehouseId } }),
   ]);
 
   return number(qtyIn._sum.qtyIn) - number(qtyOut._sum.qtyOut);
@@ -755,22 +890,40 @@ function buildWarehouseWhere(query: ListQuery): Prisma.WarehouseWhereInput {
 
 function buildNamedEntityWhere(query: ListQuery): { name?: { contains: string; mode: "insensitive" } } {
   const search = normalizedSearch(query.search);
+  const where: { isActive?: boolean; name?: { contains: string; mode: "insensitive" } } = {};
 
-  return search ? { name: { contains: search, mode: "insensitive" } } : {};
+  if (query.status === "ACTIVE") {
+    where.isActive = true;
+  } else if (query.status === "PASSIVE") {
+    where.isActive = false;
+  }
+
+  if (search) {
+    where.name = { contains: search, mode: "insensitive" };
+  }
+
+  return where;
 }
 
 function buildVatRateWhere(query: ListQuery): Prisma.VatRateWhereInput {
   const search = normalizedSearch(query.search);
+  const where: Prisma.VatRateWhereInput = {};
+
+  if (query.status === "ACTIVE") {
+    where.isActive = true;
+  } else if (query.status === "PASSIVE") {
+    where.isActive = false;
+  }
 
   if (!search) {
-    return {};
+    return where;
   }
 
   const numeric = Number(search.replace(",", "."));
 
   return Number.isFinite(numeric)
-    ? { rateBps: Math.round(numeric * 100) }
-    : {};
+    ? { ...where, rateBps: Math.round(numeric * 100) }
+    : where;
 }
 
 function buildItemWhere(query: ListQuery): Prisma.ItemWhereInput {
@@ -837,6 +990,9 @@ function defaultsFor(entity: MasterEntity): DataRecord {
       };
     case "projects":
     case "warehouses":
+    case "units":
+    case "itemClasses":
+    case "vatRates":
     case "items":
       return { is_active: true };
     default:
@@ -961,10 +1117,17 @@ function warehouseRecord(row: {
   };
 }
 
-function unitRecord(row: { createdAt: Date; id: string; name: string; updatedAt: Date }): DataRecord {
+function unitRecord(row: {
+  createdAt: Date;
+  id: string;
+  isActive: boolean;
+  name: string;
+  updatedAt: Date;
+}): DataRecord {
   return {
     created_at: isoString(row.createdAt),
     id: row.id,
+    is_active: row.isActive,
     name: row.name,
     updated_at: isoString(row.updatedAt),
   };
@@ -973,6 +1136,7 @@ function unitRecord(row: { createdAt: Date; id: string; name: string; updatedAt:
 function itemClassRecord(row: {
   createdAt: Date;
   id: string;
+  isActive: boolean;
   name: string;
   updatedAt: Date;
 }): DataRecord {
@@ -982,12 +1146,14 @@ function itemClassRecord(row: {
 function vatRateRecord(row: {
   createdAt: Date;
   id: string;
+  isActive: boolean;
   rateBps: number;
   updatedAt: Date;
 }): DataRecord {
   return {
     created_at: isoString(row.createdAt),
     id: row.id,
+    is_active: row.isActive,
     rate_bps: row.rateBps,
     updated_at: isoString(row.updatedAt),
   };

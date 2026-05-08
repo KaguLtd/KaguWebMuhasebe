@@ -44,6 +44,26 @@ const SYSTEM_PERMISSIONS = [
     key: "reports.read",
   },
   {
+    description: "View project reports.",
+    key: "reports.projects.read",
+  },
+  {
+    description: "View project stock movement reports.",
+    key: "reports.projects.stock-movements.read",
+  },
+  {
+    description: "View project invoice reports.",
+    key: "reports.projects.invoices.read",
+  },
+  {
+    description: "View project material usage reports.",
+    key: "reports.projects.material-usage.read",
+  },
+  {
+    description: "View project estimated margin reports.",
+    key: "reports.projects.estimated-margin.read",
+  },
+  {
     description: "View settings.",
     key: "settings.read",
   },
@@ -210,27 +230,27 @@ async function maybeSeedDefaultAdmin(adminRoleId) {
 async function seedReferenceData() {
   await prisma.unit.createMany({
     data: [
-      { id: "unit-adet", name: "ADET" },
-      { id: "unit-kg", name: "KG" },
-      { id: "unit-m", name: "METRE" },
+      { id: "unit-adet", isActive: true, name: "ADET" },
+      { id: "unit-kg", isActive: true, name: "KG" },
+      { id: "unit-m", isActive: true, name: "METRE" },
     ],
     skipDuplicates: true,
   });
 
   await prisma.itemClass.createMany({
     data: [
-      { id: "class-hammadde", name: "Hammadde" },
-      { id: "class-mamul", name: "Mamul" },
-      { id: "class-yardimci", name: "Yardimci Malzeme" },
+      { id: "class-hammadde", isActive: true, name: "Hammadde" },
+      { id: "class-mamul", isActive: true, name: "Mamul" },
+      { id: "class-yardimci", isActive: true, name: "Yardimci Malzeme" },
     ],
     skipDuplicates: true,
   });
 
   await prisma.vatRate.createMany({
     data: [
-      { id: "vat-0", rateBps: 0 },
-      { id: "vat-10", rateBps: 1000 },
-      { id: "vat-20", rateBps: 2000 },
+      { id: "vat-0", isActive: true, rateBps: 0 },
+      { id: "vat-10", isActive: true, rateBps: 1000 },
+      { id: "vat-20", isActive: true, rateBps: 2000 },
     ],
     skipDuplicates: true,
   });

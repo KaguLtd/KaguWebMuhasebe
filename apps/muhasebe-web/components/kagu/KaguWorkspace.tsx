@@ -11,6 +11,7 @@ import {
   SettingOutlined,
   ShopOutlined,
   SwapOutlined,
+  TableOutlined,
 } from "@ant-design/icons";
 import {
   Alert,
@@ -19,6 +20,7 @@ import {
   Card,
   Col,
   ConfigProvider,
+  Descriptions,
   Layout,
   Menu,
   Row,
@@ -35,6 +37,7 @@ import { useEffect, useState, useTransition } from "react";
 
 import { DocumentWorkspace } from "./DocumentWorkspace";
 import { MasterWorkspace } from "./MasterWorkspace";
+import { ProjectReportsWorkspace } from "./ProjectReportsWorkspace";
 import { SettingsPeriodLockPanel } from "./SettingsPeriodLockPanel";
 import { SettingsUsersPanel } from "./SettingsUsersPanel";
 import {
@@ -48,7 +51,7 @@ import {
 } from "@/lib/kagu/config";
 import type { BootstrapPayload } from "@/lib/kagu/api";
 import { fetchBootstrap, fetchLookups, logoutSession } from "@/lib/kagu/api";
-import type { LookupEntity, LookupItem } from "@/lib/kagu/contracts";
+import type { Currency, LookupEntity, LookupItem } from "@/lib/kagu/contracts";
 import { formatMinor } from "@/lib/kagu/helpers";
 
 const { Header, Sider, Content } = Layout;
@@ -231,8 +234,8 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
             <div className="kagu-brand">
               <span className="kagu-brand-mark">K</span>
               <div>
-                <strong>KAGU ERP</strong>
-                <span>Muhasebe Web</span>
+                <strong>KAGU Panel</strong>
+                <span>Mini Muhasebe</span>
               </div>
             </div>
             <Menu
@@ -250,7 +253,7 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
             <Header className="kagu-header">
               <div>
                 <Typography.Text className="kagu-header-eyebrow">
-                  KAGU muhasebe operasyon merkezi
+                  KAGU mini muhasebe operasyon merkezi
                 </Typography.Text>
                 <Typography.Title level={4} style={{ color: "white", margin: 0 }}>
                   {workspaceMenu.find((item) => item.key === activeMenu)?.title}
@@ -289,6 +292,9 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
               ) : null}
               {!loading && activeMenu === "dashboard" ? (
                 <DashboardPane bootstrap={bootstrap} />
+              ) : null}
+              {!loading && activeMenu === "projectReports" ? (
+                <ProjectReportsWorkspace lookups={lookups} />
               ) : null}
               {!loading && masterModule ? (
                 <MasterWorkspace
@@ -338,36 +344,28 @@ function DashboardPane({ bootstrap }: { bootstrap: BootstrapPayload | null }) {
       </Row>
       <Row gutter={[16, 16]}>
         <Col lg={6} md={12} xs={24}>
-          <Card className="kagu-card">
-            <Statistic
-              title="Gunluk Satis"
-              value={formatMinor(bootstrap?.dashboard.dailySalesTotalMinor, "TRY")}
-            />
-          </Card>
+          <CurrencyBreakdownCard
+            title="Gunluk Satis"
+            totals={bootstrap?.dashboard.dailySalesByCurrency}
+          />
         </Col>
         <Col lg={6} md={12} xs={24}>
-          <Card className="kagu-card">
-            <Statistic
-              title="Haftalik Satis"
-              value={formatMinor(bootstrap?.dashboard.weeklySalesTotalMinor, "TRY")}
-            />
-          </Card>
+          <CurrencyBreakdownCard
+            title="Haftalik Satis"
+            totals={bootstrap?.dashboard.weeklySalesByCurrency}
+          />
         </Col>
         <Col lg={6} md={12} xs={24}>
-          <Card className="kagu-card">
-            <Statistic
-              title="Aylik Satis"
-              value={formatMinor(bootstrap?.dashboard.monthlySalesTotalMinor, "TRY")}
-            />
-          </Card>
+          <CurrencyBreakdownCard
+            title="Aylik Satis"
+            totals={bootstrap?.dashboard.monthlySalesByCurrency}
+          />
         </Col>
         <Col lg={6} md={12} xs={24}>
-          <Card className="kagu-card">
-            <Statistic
-              title="Stok Toplam"
-              value={formatMinor(bootstrap?.dashboard.inventoryTotalMinor, "TRY")}
-            />
-          </Card>
+          <CurrencyBreakdownCard
+            title="Stok Toplamlari"
+            totals={bootstrap?.dashboard.inventoryTotalByCurrency}
+          />
         </Col>
       </Row>
       <Card className="kagu-card" title="Faz Durumu">
@@ -379,6 +377,47 @@ function DashboardPane({ bootstrap }: { bootstrap: BootstrapPayload | null }) {
         />
       </Card>
     </Space>
+  );
+}
+
+function CurrencyBreakdownCard({
+  title,
+  totals,
+}: {
+  title: string;
+  totals?: Record<Currency, number>;
+}) {
+  const nonZeroEntries = Object.entries(totals ?? {})
+    .filter(([, amount]) => Math.abs(amount) > 0)
+    .map(([currency, amount]) => [currency as Currency, amount] as const);
+
+  if (nonZeroEntries.length === 1) {
+    const [currency, amount] = nonZeroEntries[0];
+
+    return (
+      <Card className="kagu-card">
+        <Statistic title={title} value={formatMinor(amount, currency)} />
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="kagu-card">
+      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+        <Typography.Text strong>{title}</Typography.Text>
+        {nonZeroEntries.length ? (
+          <Descriptions column={1} size="small">
+            {nonZeroEntries.map(([currency, amount]) => (
+              <Descriptions.Item key={currency} label={`${currency} toplam`}>
+                {formatMinor(amount, currency)}
+              </Descriptions.Item>
+            ))}
+          </Descriptions>
+        ) : (
+          <Typography.Text>0</Typography.Text>
+        )}
+      </Space>
+    </Card>
   );
 }
 
@@ -456,6 +495,10 @@ function resolveRequiredLookups({
     return [] as LookupEntity[];
   }
 
+  if (activeMenu === "projectReports") {
+    return ["projects", "warehouses"];
+  }
+
   if (masterModule) {
     return uniqueLookups(masterModule.fields.map((field) => field.lookupEntity));
   }
@@ -493,6 +536,7 @@ const iconByKey: Record<string, ReactNode> = {
   items: <InboxOutlined />,
   projects: <FolderOpenOutlined />,
   receipts: <ShopOutlined />,
+  projectReports: <TableOutlined />,
   settings: <SettingOutlined />,
   transfers: <SwapOutlined />,
   warehouses: <DeploymentUnitOutlined />,

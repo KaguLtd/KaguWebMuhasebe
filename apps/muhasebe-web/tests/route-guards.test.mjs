@@ -132,7 +132,7 @@ test("period lock route returns 403 for authenticated non-admin users", async ()
   assert.match((await response.json()).error, /yetki|yonetici/i);
 });
 
-test("master hard delete returns 403 for authenticated non-admin users", async () => {
+test("master archive route returns 403 for authenticated non-admin users", async () => {
   const [{ DELETE: deleteRoute }] = await Promise.all([
     importAppModule("app/api/master/[entity]/[id]/route.ts"),
   ]);
@@ -152,5 +152,5 @@ test("master hard delete returns 403 for authenticated non-admin users", async (
   );
 
   assert.equal(response.status, 403);
-  assert.match((await response.json()).error, /yonetici|hard delete/i);
+  assert.match((await response.json()).error, /yonetici|pasife alma/i);
 });

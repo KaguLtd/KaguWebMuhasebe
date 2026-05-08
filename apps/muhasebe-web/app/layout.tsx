@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "KAGU Muhasebe Web",
-  description: "KAGU ERP web yeniden insa iskeleti",
+  description: "Kucuk ve orta olcekli firmalar icin mini muhasebe ve operasyon paneli",
 };
 
 export default function RootLayout({

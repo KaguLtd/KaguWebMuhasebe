@@ -1202,13 +1202,44 @@ async function assertDocumentParityWithTx(
     }
 
     const account = await tx.account.findUnique({ where: { id: accountId } });
+
+    if (!account) {
+      throw new Error("Secilen cari bulunamadi");
+    }
+
+    if (!account.isActive) {
+      throw new Error("Pasif cari ile yeni islem yapilamaz");
+    }
+
     const expectedCurrency = currency(account?.currency);
 
     if (header.project_id) {
       const project = await tx.project.findUnique({ where: { id: text(header.project_id) } });
 
+      if (!project) {
+        throw new Error("Secilen proje bulunamadi");
+      }
+
+      if (!project.isActive) {
+        throw new Error("Pasif proje ile yeni islem yapilamaz");
+      }
+
       if (project && project.accountId !== accountId) {
         throw new Error("Secilen proje bu cariye bagli degil");
+      }
+    }
+
+    if (header.warehouse_id) {
+      const warehouse = await tx.warehouse.findUnique({
+        where: { id: text(header.warehouse_id) },
+      });
+
+      if (!warehouse) {
+        throw new Error("Secilen depo bulunamadi");
+      }
+
+      if (!warehouse.isActive) {
+        throw new Error("Pasif depo ile yeni islem yapilamaz");
       }
     }
 
@@ -1221,6 +1252,16 @@ async function assertDocumentParityWithTx(
     }
 
     for (const line of lines) {
+      const item = await tx.item.findUnique({ where: { id: text(line.itemId ?? line.item_id) } });
+
+      if (!item) {
+        throw new Error("Secilen malzeme bulunamadi");
+      }
+
+      if (!item.isActive) {
+        throw new Error("Pasif malzeme ile yeni islem yapilamaz");
+      }
+
       const lineCurrency = "currency" in line ? line.currency : undefined;
 
       if (currency(lineCurrency) !== expectedCurrency) {
@@ -1237,6 +1278,15 @@ async function assertDocumentParityWithTx(
   const toAccount = await tx.account.findUnique({
     where: { id: text(header.to_account_id) },
   });
+
+  if (!fromAccount || !toAccount) {
+    throw new Error("Virman carileri bulunamadi");
+  }
+
+  if (!fromAccount.isActive || !toAccount.isActive) {
+    throw new Error("Pasif cari ile yeni virman yapilamaz");
+  }
+
   const fromCurrency = currency(fromAccount?.currency);
 
   if (currency(header.currency) !== fromCurrency) {

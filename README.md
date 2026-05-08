@@ -1,94 +1,69 @@
-# KAGU ERP Web Rebuild
+# KAGU Mini Muhasebe / Operasyon Paneli
 
-Bu repo, mevcut KAGU ERP masaustu muhasebe uygulamasinin kontrollu web yeniden
-insasi icin hazirlanmistir.
+Bu repo, kucuk ve orta olcekli firmalar icin `cari hesap`, `stok`, `irsaliye`,
+`fatura`, `tahsilat/odeme` ve `proje bazli hareket takibi` sunan mini
+muhasebe/operasyon panelinin web uygulama kodunu icerir.
+
+Bu urun bilincli olarak dar kapsamli konumlanir. `Genel muhasebe`,
+`beyanname`, `mizan`, `bilanco` ve tam yasal raporlama uretimi hedeflenmez.
+
+## Kapsam
+
+- Cari hesap ve proje baglantili hareket takibi
+- Depo, malzeme ve stok hareketi gorunurlugu
+- Irsaliye, fatura, tahsilat/odeme ve virman akislari
+- Proje bazli operasyon raporlari
+- PostgreSQL tabanli veri modeli, oturum ve production guardrail'leri
+
+## Sinirlar
+
+- Legacy masaustu uygulama parity'si tamamlanmis kabul edilmez
+- `production:check` ve test varligi tek basina production-ready iddiasi degildir
+- Tam kur cevrimi, PITR/HA ve full project P&L bu fazin disindadir
 
 ## Mevcut Durum
 
-- Planlama ve parity dokumanlari `docs/` altinda hazir.
-- Yeni web uygulamasi iskeleti `apps/muhasebe-web` altinda kurulu.
-- Legacy intake yapisi `legacy/` altinda hazir.
-- Finansal modul tasimasi henuz baslamadi; legacy artefaktlar bekleniyor.
+- `apps/muhasebe-web` altinda calisan Next.js uygulamasi bulunur
+- Prisma/PostgreSQL veri modeli, master data, belge akislari ve temel raporlar aktiftir
+- Yetki, oturum, period lock ve deployment guardrail'leri vardir
+- Legacy evidence ve parity dokumanlari `docs/` altinda tutulur
 
 ## Klasorler
 
-- `apps/muhasebe-web`: Next.js tabanli yeni web uygulamasi
-- `docs`: migration, parity, veri modeli ve deployment kayitlari
-- `legacy`: read-only masaustu kaynaklari icin intake alani
-- `scripts`: migration, import ve export planlari
-- `tests/parity`: legacy ile web esitligini dogrulayan testler
+- `apps/muhasebe-web`: uygulama, API route'lari ve UI
+- `docs`: veri modeli, deployment, parity ve operasyon notlari
+- `scripts`: operasyon, migration ve destek script'leri
+- `tests/parity`: parity ve regresyon testleri
+- `legacy`: referans masaustu kaynaklari ve evidence alani
 
-## Calistirma
+## Hizli Baslangic
 
 ```bash
 npm run dev
 ```
 
-Bu komut root seviyesinden `apps/muhasebe-web` uygulamasini baslatir.
-
-Gelisim verisini sadece explicit seed ile yuklemek icin:
+Yerel referans veri yuklemek icin:
 
 ```bash
 npm run seed:dev
 ```
 
-FK migration oncesi orphan kontrolu icin:
+Temel kontrol zinciri:
 
 ```bash
-npm run db:check-orphans
-```
-
-## Legacy Inventory
-
-Root klasorde legacy intake ozetini uretmek icin:
-
-```bash
-npm run legacy:inventory:write
-```
-
-Bu komut [docs/LEGACY_INVENTORY.md](docs/LEGACY_INVENTORY.md)
-dosyasini gunceller.
-
-Modul ve rapor capture dosyalarini otomatik acmak icin:
-
-```bash
-npm run legacy:bootstrap:modules
-```
-
-Genel readiness ozetini yazmak icin:
-
-```bash
-npm run legacy:readiness:write
-```
-
-Tum evidence snapshot'larini tek adimda yenilemek icin:
-
-```bash
-npm run evidence:refresh
-```
-
-Komut contract'inin tam ozeti icin [scripts/README.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/scripts/README.md)
-dosyasina bak.
-
-## Kontroller
-
-```bash
-npm run lint
-npm run typecheck
-npm run test
-npm run build
 npm run verify
 npm run production:check
 ```
 
-`npm run verify` root seviyesinde lint, typecheck, parity testleri ve production build zincirini sirayla calistirir.
+## Operasyon Notlari
 
-## Bir Sonraki Gereken Sey
+- Backup ve restore runbook'u: [docs/BACKUP_RESTORE.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/BACKUP_RESTORE.md)
+- Deployment guardrail'leri: [docs/DEPLOYMENT.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/DEPLOYMENT.md)
+- Dokuman haritasi: [docs/INDEX.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/INDEX.md)
+- Script katalogu: [scripts/README.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/scripts/README.md)
 
-`legacy/` altina su kanitlari koy:
+## Legacy ve Parity
 
-- kaynak kod veya calisan binary
-- ekran goruntuleri
-- rapor ornekleri
-- veri exportlari veya veritabani ornekleri
-- kullanici akis notlari
+Bu repo legacy masaustu urunden gelen akislari referans alir, ancak legacy kanit
+olmadan tam parity vaadi vermez. Evidence snapshot'lari ilerlemeyi gosterir;
+tek basina kabul kriteri yerine gecmez.

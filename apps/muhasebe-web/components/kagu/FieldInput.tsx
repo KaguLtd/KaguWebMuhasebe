@@ -4,6 +4,7 @@ import { DatePicker, Form, Input, InputNumber, Select, Switch } from "antd";
 
 import type { FieldConfig } from "@/lib/kagu/config";
 import type { LookupEntity, LookupItem } from "@/lib/kagu/contracts";
+import { selectableLookupOptions } from "@/lib/kagu/helpers";
 
 type LookupMap = Partial<Record<LookupEntity, LookupItem[]>>;
 
@@ -13,6 +14,8 @@ interface FieldInputProps {
 }
 
 export function FieldInput({ field, lookups }: FieldInputProps) {
+  const form = Form.useFormInstance();
+  const currentValue = Form.useWatch(field.name, form);
   const rules = field.required
     ? [{ required: true, message: `${field.label} gerekli` }]
     : undefined;
@@ -38,12 +41,12 @@ export function FieldInput({ field, lookups }: FieldInputProps) {
       rules={rules}
       tooltip={field.hint}
     >
-      {renderControl(field, lookups)}
+      {renderControl(field, lookups, currentValue)}
     </Form.Item>
   );
 }
 
-function renderControl(field: FieldConfig, lookups: LookupMap) {
+function renderControl(field: FieldConfig, lookups: LookupMap, currentValue?: unknown) {
   if (field.type === "textarea") {
     return <Input.TextArea autoSize={{ minRows: 3 }} />;
   }
@@ -68,7 +71,7 @@ function renderControl(field: FieldConfig, lookups: LookupMap) {
     return (
       <Select
         allowClear={!field.required}
-        options={selectOptions(field, lookups)}
+        options={selectOptions(field, lookups, currentValue)}
         showSearch
         optionFilterProp="label"
       />
@@ -78,12 +81,9 @@ function renderControl(field: FieldConfig, lookups: LookupMap) {
   return <Input />;
 }
 
-function selectOptions(field: FieldConfig, lookups: LookupMap) {
+function selectOptions(field: FieldConfig, lookups: LookupMap, currentValue?: unknown) {
   if (field.lookupEntity) {
-    return (lookups[field.lookupEntity] ?? []).map((item) => ({
-      label: item.label,
-      value: item.id,
-    }));
+    return selectableLookupOptions(lookups[field.lookupEntity], currentValue);
   }
 
   return field.options ?? [];

@@ -1,25 +1,21 @@
-# KAGU Muhasebe Web
+# Muhasebe Web Uygulamasi
 
-Bu uygulama, KAGU ERP masaustu muhasebe yaziliminin web yeniden insa calismasi
-icin hazirlanan Next.js iskeletidir.
+Bu uygulama, kucuk ve orta olcekli firmalar icin `cari hesap`, `stok`,
+`irsaliye`, `fatura`, `tahsilat/odeme` ve `proje bazli hareket takibi` saglayan
+mini muhasebe/operasyon panelinin Next.js uygulamasidir.
 
-## Faz Durumu
+Urun siniri bilincli olarak dardir: resmi `genel muhasebe`, `beyanname`,
+`mizan`, `bilanco` ve tam yasal raporlama hedeflenmez.
 
-- Faz 0-2: Plan, audit ve parity dokumanlari hazirlandi.
-- Faz 3: Next.js iskeleti, placeholder login, dashboard ve route guard eklendi.
-- Faz 4+: Legacy kaynaklar repoya eklenmeden finansal modelleme ve modul tasima
-  baslatilmamali.
+## Uygulama Yuzeyi
 
-## Mevcut Ozellikler
-
-- App Router tabanli Next.js kurulumu
-- Tailwind CSS v4
-- Placeholder login ekrani
-- Placeholder dashboard
-- Legacy intake durumu gosteren `/intake` sayfasi
-- Middleware ile korumali rota iskeleti
-- Prisma datasource ve client hazirligi
-- Root `docs/` klasorundeki roadmap ciktilarini gosteren `/docs` sayfasi
+- App Router tabanli Next.js uygulamasi
+- Prisma/PostgreSQL source of truth
+- Oturum, rol ve yetki temeli
+- Master data yonetimi
+- Belge taslak/onay/iptal akislari
+- Dashboard ve operasyon raporlari
+- Period lock ve admin/settings yuzeyleri
 
 ## Gelistirme
 
@@ -27,39 +23,41 @@ icin hazirlanan Next.js iskeletidir.
 npm run dev
 ```
 
-Repo root'undan ayni sunucuyu baslatmak icin `npm run dev` komutu da
-kullanilabilir.
+Repo root'undan ayni akisi calistirmak icin:
 
-Varsayilan akis:
+```bash
+npm run dev
+```
 
-- `/` kullaniciyi oturum durumuna gore `/login` veya `/dashboard` sayfasina yonlendirir.
-- `/login` sayfasindaki buton yalnizca Faz 3 placeholder oturumu acar.
-- Gercek auth sistemi Faz 5'te eklenecektir.
+Yerel dogrulama:
+
+```bash
+npm run test
+npm run build
+npm run verify
+npm run production:check
+```
 
 ## Ortam Degiskenleri
-
-`.env.example` dosyasini temel al:
 
 ```bash
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/kagu_muhasebe?schema=public"
 NEXT_PUBLIC_APP_NAME="KAGU Muhasebe Web"
 ```
 
-## Onemli Not
+Production guardrail'leri ve backup acknowledgement ayrintisi icin
+[docs/DEPLOYMENT.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/DEPLOYMENT.md)
+ile [docs/BACKUP_RESTORE.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/BACKUP_RESTORE.md)
+dosyalarina bakin.
 
-Bu uygulama bilincli olarak modern bir ERP redesign'i gibi davranmaz. Legacy
-masaustu uygulama kaynaklari geldikten sonra UI, veri modeli ve muhasebe
-davranislarinin parity odakli olarak daraltilmasi gerekir.
+## Sinirlar ve Non-Goals
 
-Workspace seviyesinde legacy doluluk raporu almak icin root klasorde:
+- Legacy parity tamamlanmis kabul edilmez
+- Approximate invoice margin veya proje brut marji, tam muhasebesel karlilik degildir
+- Mixed currency konsolidasyonu ancak acik FX politikasi tanimlandiginda eklenmelidir
 
-```bash
-npm run legacy:inventory:write
-```
+## Devam Dokumanlari
 
-Workspace contract'i ile uyumlu root kontroller:
-
-```bash
-npm run verify
-npm run production:check
-```
+- Veri modeli: [docs/DATA_MODEL.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/DATA_MODEL.md)
+- Rapor durumu: [docs/REPORTS_PARITY.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/REPORTS_PARITY.md)
+- Migration ve parity notlari: [docs/INDEX.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/INDEX.md)

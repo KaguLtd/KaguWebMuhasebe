@@ -174,21 +174,24 @@ export async function parseMasterPayload(
         name: requiredString(payload.name, "Depo adi zorunludur"),
       });
     case "units":
-      assertOnlyKeys(payload, ["id", "name"]);
+      assertOnlyKeys(payload, ["id", "name", "isActive"]);
       return cleanObject({
         id: optionalId(payload.id),
+        isActive: optionalBooleanField(payload.isActive),
         name: requiredString(payload.name, "Birim adi zorunludur"),
       });
     case "itemClasses":
-      assertOnlyKeys(payload, ["id", "name"]);
+      assertOnlyKeys(payload, ["id", "name", "isActive"]);
       return cleanObject({
         id: optionalId(payload.id),
+        isActive: optionalBooleanField(payload.isActive),
         name: requiredString(payload.name, "Sinif adi zorunludur"),
       });
     case "vatRates":
-      assertOnlyKeys(payload, ["id", "rateBps"]);
+      assertOnlyKeys(payload, ["id", "rateBps", "isActive"]);
       return cleanObject({
         id: optionalId(payload.id),
+        isActive: optionalBooleanField(payload.isActive),
         rateBps: requiredNumber(payload.rateBps, "KDV orani zorunludur", {
           integer: true,
           min: 0,

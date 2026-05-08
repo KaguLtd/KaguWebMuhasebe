@@ -27,6 +27,17 @@ Actions workflow'u ile ayni contract'i paylasir:
 | `npm run legacy:readiness:write` | `docs/LEGACY_READYNESS.md` |
 | `npm run legacy:bootstrap:modules` | `legacy/notes` altindaki module/report capture taslaklarini acmaya yardim eder |
 
+## Backup Ve Restore Scriptleri
+
+| Script | Amac |
+| --- | --- |
+| `./scripts/backup-postgres.sh` | `pg_dump -Fc`, checksum ve manifest ureterek gecelik backup alir |
+| `./scripts/restore-postgres.sh /path/to/archive.dump` | hedef veritabanina manuel restore yapar |
+| `./scripts/restore-smoke.sh /path/to/archive.dump` | restore sonrasi orphan, readiness ve health smoke kontrolu calistirir |
+
+Detayli runbook icin [docs/BACKUP_RESTORE.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/BACKUP_RESTORE.md)
+dosyasina bakin.
+
 ## Workflow Kullanimi
 
 - `.github/workflows/docs-devops.yml` once `npm run evidence:refresh`, sonra

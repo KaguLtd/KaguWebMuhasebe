@@ -50,6 +50,7 @@ import {
   humanizeEnum,
   parseMoneyToMinor,
   relationLookupByColumn,
+  selectableLookupOptions,
 } from "@/lib/kagu/helpers";
 
 type LookupMap = Partial<Record<LookupEntity, LookupItem[]>>;
@@ -458,10 +459,7 @@ function MasterFieldInput({
             void onSuggestCode({ classId: value });
           }}
           optionFilterProp="label"
-          options={(lookups.itemClasses ?? []).map((item) => ({
-            label: item.label,
-            value: item.id,
-          }))}
+          options={selectableLookupOptions(lookups.itemClasses)}
           showSearch
         />
       </Form.Item>
