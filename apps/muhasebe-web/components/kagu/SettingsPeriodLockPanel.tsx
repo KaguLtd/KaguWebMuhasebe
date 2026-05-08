@@ -28,8 +28,41 @@ export function SettingsPeriodLockPanel({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void loadConfig();
-  }, []);
+    let active = true;
+
+    void (async () => {
+      setLoading(true);
+
+      try {
+        const nextConfig = await fetchPeriodLock();
+
+        if (!active) {
+          return;
+        }
+
+        setConfig(nextConfig);
+        setError(null);
+        form.setFieldsValue({
+          isActive: nextConfig.isActive,
+          lockDate: nextConfig.lockDate ? dayjs(nextConfig.lockDate) : null,
+        });
+      } catch (error) {
+        if (active) {
+          setError(
+            error instanceof Error ? error.message : "Donem kilidi bilgileri alinamadi.",
+          );
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [form]);
 
   async function loadConfig() {
     setLoading(true);
