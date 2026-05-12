@@ -1,81 +1,79 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, extname, resolve } from "node:path";
-import { registerHooks } from "node:module";
+import { dirname, extname, resolve as resolvePath } from "node:path";
 
 import ts from "typescript";
 
 const runtimeRoot = dirname(fileURLToPath(import.meta.url));
-const appRoot = resolve(runtimeRoot, "..", "..");
+const appRoot = resolvePath(runtimeRoot, "..", "..");
 
 const fixedResolutions = new Map([
-  ["next/headers", pathToFileURL(resolve(runtimeRoot, "mocks", "next-headers.mjs")).href],
-  ["next/server", pathToFileURL(resolve(runtimeRoot, "mocks", "next-server.mjs")).href],
-  ["@/server/db", pathToFileURL(resolve(runtimeRoot, "mocks", "server-db.mjs")).href],
+  ["next/headers", pathToFileURL(resolvePath(runtimeRoot, "mocks", "next-headers.mjs")).href],
+  ["next/server", pathToFileURL(resolvePath(runtimeRoot, "mocks", "next-server.mjs")).href],
+  ["@/server/db", pathToFileURL(resolvePath(runtimeRoot, "mocks", "server-db.mjs")).href],
 ]);
 
-registerHooks({
-  load(url, context, nextLoad) {
-    if (url.startsWith("file:")) {
-      const extension = extname(fileURLToPath(url));
+export function load(url, context, nextLoad) {
+  if (url.startsWith("file:")) {
+    const extension = extname(fileURLToPath(url));
 
-      if (extension === ".ts" || extension === ".tsx") {
-        const source = readFileSync(new URL(url), "utf8");
-        const transpiled = ts.transpileModule(source, {
-          compilerOptions: {
-            jsx: extension === ".tsx" ? ts.JsxEmit.ReactJSX : ts.JsxEmit.Preserve,
-            module: ts.ModuleKind.ESNext,
-            target: ts.ScriptTarget.ES2022,
-          },
-          fileName: fileURLToPath(url),
-        });
+    if (extension === ".ts" || extension === ".tsx") {
+      const source = readFileSync(new URL(url), "utf8");
+      const transpiled = ts.transpileModule(source, {
+        compilerOptions: {
+          jsx: extension === ".tsx" ? ts.JsxEmit.ReactJSX : ts.JsxEmit.Preserve,
+          module: ts.ModuleKind.ESNext,
+          target: ts.ScriptTarget.ES2022,
+        },
+        fileName: fileURLToPath(url),
+      });
 
-        return {
-          format: "module",
-          shortCircuit: true,
-          source: transpiled.outputText,
-        };
-      }
+      return {
+        format: "module",
+        shortCircuit: true,
+        source: transpiled.outputText,
+      };
     }
+  }
 
-    return nextLoad(url, context);
-  },
-  resolve(specifier, context, nextResolve) {
-    const fixed = fixedResolutions.get(specifier);
+  return nextLoad(url, context);
+}
 
-    if (fixed) {
-      return { shortCircuit: true, url: fixed };
-    }
+export function resolve(specifier, context, nextResolve) {
+  const fixed = fixedResolutions.get(specifier);
 
-    if (specifier.startsWith("@/")) {
-      const resolved = resolveAlias(specifier.slice(2));
+  if (fixed) {
+    return { shortCircuit: true, url: fixed };
+  }
+
+  if (specifier.startsWith("@/")) {
+    const resolved = resolveAlias(specifier.slice(2));
+    return { shortCircuit: true, url: resolved };
+  }
+
+  if ((specifier.startsWith("./") || specifier.startsWith("../")) && context.parentURL) {
+    const resolved = resolveRelativeSpecifier(specifier, context.parentURL);
+
+    if (resolved) {
       return { shortCircuit: true, url: resolved };
     }
+  }
 
-    if ((specifier.startsWith("./") || specifier.startsWith("../")) && context.parentURL) {
-      const resolved = resolveRelativeSpecifier(specifier, context.parentURL);
-
-      if (resolved) {
-        return { shortCircuit: true, url: resolved };
-      }
-    }
-
-    return nextResolve(specifier, context);
-  },
-});
+  return nextResolve(specifier, context);
+}
 
 function resolveAlias(relativePath) {
-  const basePath = resolve(appRoot, relativePath);
+  const basePath = resolvePath(appRoot, relativePath);
   const candidates = [
     basePath,
     `${basePath}.ts`,
     `${basePath}.tsx`,
     `${basePath}.js`,
     `${basePath}.mjs`,
-    resolve(basePath, "index.ts"),
-    resolve(basePath, "index.tsx"),
-    resolve(basePath, "index.js"),
-    resolve(basePath, "index.mjs"),
+    resolvePath(basePath, "index.ts"),
+    resolvePath(basePath, "index.tsx"),
+    resolvePath(basePath, "index.js"),
+    resolvePath(basePath, "index.mjs"),
   ];
 
   for (const candidate of candidates) {
@@ -89,7 +87,7 @@ function resolveAlias(relativePath) {
 
 function resolveRelativeSpecifier(specifier, parentUrl) {
   const parentPath = fileURLToPath(parentUrl);
-  const basePath = resolve(dirname(parentPath), specifier);
+  const basePath = resolvePath(dirname(parentPath), specifier);
   const resolved = resolveWithKnownExtensions(basePath);
 
   return resolved ? pathToFileURL(resolved).href : null;
@@ -102,10 +100,10 @@ function resolveWithKnownExtensions(basePath) {
     `${basePath}.tsx`,
     `${basePath}.js`,
     `${basePath}.mjs`,
-    resolve(basePath, "index.ts"),
-    resolve(basePath, "index.tsx"),
-    resolve(basePath, "index.js"),
-    resolve(basePath, "index.mjs"),
+    resolvePath(basePath, "index.ts"),
+    resolvePath(basePath, "index.tsx"),
+    resolvePath(basePath, "index.js"),
+    resolvePath(basePath, "index.mjs"),
   ];
 
   for (const candidate of candidates) {

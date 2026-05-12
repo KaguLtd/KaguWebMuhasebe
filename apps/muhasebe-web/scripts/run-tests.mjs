@@ -27,12 +27,17 @@ const testFiles = (await Promise.all(testRoots.map(collectTests)))
   .flat()
   .sort()
   .map((file) => relative(appRoot, file));
+const loaderRegister = [
+  'import { register } from "node:module";',
+  'import { pathToFileURL } from "node:url";',
+  'register("./tests/runtime/register-hooks.mjs", pathToFileURL("./"));',
+].join(" ");
 
 const result = spawnSync(
   process.execPath,
   [
     "--import",
-    "./tests/runtime/register-hooks.mjs",
+    `data:text/javascript,${encodeURIComponent(loaderRegister)}`,
     "--test",
     "--test-concurrency=1",
     ...testFiles,
