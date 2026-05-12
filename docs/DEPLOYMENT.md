@@ -31,10 +31,26 @@
 - Repo root'unda `npm run verify`
 - Repo root'unda `npm run production:check`
 - `npx prisma migrate deploy`
+- Ilk admin hesabi gerekiyorsa `First admin bootstrap` adimini calistir.
 - `/api/health` response `status: "ok"` donmeli.
 - Reverse proxy HTTPS, request size limiti, gzip/brotli ve timeout ayarlari kontrol edilmeli.
 - Backup ve restore testi yapilmadan canli muhasebe verisi alinmamali.
 - Runbook referansi: `docs/BACKUP_RESTORE.md`
+
+## First Admin Bootstrap
+
+```bash
+cd apps/muhasebe-web
+
+DATABASE_URL="postgresql://..." \
+ADMIN_USERNAME="admin" \
+ADMIN_PASSWORD="your-password" \
+ADMIN_FULL_NAME="Admin" \
+npm run admin:bootstrap
+```
+
+Script sifreyi log'a yazmaz; sadece ADMIN rolunu, sistem permission kayitlarini
+ve aktif ADMIN kullanicisini hazirlar.
 
 ## Workflow Contract
 

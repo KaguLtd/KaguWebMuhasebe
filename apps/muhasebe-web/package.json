@@ -12,6 +12,7 @@
     "verify": "npm run prisma:generate && npm run prisma:validate && npm run typecheck && npm run lint && npm run test && npm run build",
     "production:check": "node scripts/check-production-readiness.mjs --production",
     "seed:dev": "node scripts/seed-dev.mjs",
+    "admin:bootstrap": "node scripts/admin-bootstrap.mjs",
     "db:check-orphans": "node scripts/check-orphans.mjs",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate"

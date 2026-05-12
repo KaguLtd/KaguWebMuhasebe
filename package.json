@@ -11,6 +11,7 @@
     "production:check": "npm --prefix apps/muhasebe-web run production:check",
     "parity:test": "npm run test",
     "seed:dev": "npm --prefix apps/muhasebe-web run seed:dev",
+    "admin:bootstrap": "npm --prefix apps/muhasebe-web run admin:bootstrap",
     "db:check-orphans": "npm --prefix apps/muhasebe-web run db:check-orphans",
     "legacy:inventory": "node scripts/legacy-inventory.mjs",
     "legacy:inventory:write": "node scripts/legacy-inventory.mjs --write",

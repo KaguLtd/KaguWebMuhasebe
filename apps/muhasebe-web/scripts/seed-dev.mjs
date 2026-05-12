@@ -1,90 +1,26 @@
-import { randomBytes, scryptSync } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { PrismaClient } from "@prisma/client";
 
+import {
+  ensureAdminPermissions,
+  ensureAdminRole,
+  ensureAdminUser,
+} from "./admin-bootstrap-shared.mjs";
+
 const DEFAULT_ADMIN_FLAG = "--with-default-admin";
 const LOCAL_DB_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "host.docker.internal"]);
-const SYSTEM_PERMISSIONS = [
-  {
-    description: "Create, update, and deactivate users.",
-    key: "users.manage",
-  },
-  {
-    description: "Manage role definitions and assignments.",
-    key: "roles.manage",
-  },
-  {
-    description: "View master data records.",
-    key: "masters.read",
-  },
-  {
-    description: "Create and update master data records.",
-    key: "masters.write",
-  },
-  {
-    description: "View accounting documents.",
-    key: "documents.read",
-  },
-  {
-    description: "Create and update document drafts.",
-    key: "documents.write",
-  },
-  {
-    description: "Approve accounting documents.",
-    key: "documents.approve",
-  },
-  {
-    description: "Void accounting documents.",
-    key: "documents.void",
-  },
-  {
-    description: "View reports.",
-    key: "reports.read",
-  },
-  {
-    description: "View project reports.",
-    key: "reports.projects.read",
-  },
-  {
-    description: "View project stock movement reports.",
-    key: "reports.projects.stock-movements.read",
-  },
-  {
-    description: "View project invoice reports.",
-    key: "reports.projects.invoices.read",
-  },
-  {
-    description: "View project material usage reports.",
-    key: "reports.projects.material-usage.read",
-  },
-  {
-    description: "View project estimated margin reports.",
-    key: "reports.projects.estimated-margin.read",
-  },
-  {
-    description: "View settings.",
-    key: "settings.read",
-  },
-];
 
 loadEnvFiles();
 
 const prisma = new PrismaClient();
 
-function hashPassword(password) {
-  const salt = randomBytes(16).toString("hex");
-  const hash = scryptSync(password, salt, 64).toString("hex");
-
-  return `scrypt$${salt}$${hash}`;
-}
-
 async function main() {
   assertSafeDevSeedEnvironment();
 
-  const adminRole = await ensureAdminRole();
-  await ensureAdminPermissions(adminRole.id);
+  const adminRole = await ensureAdminRole(prisma);
+  await ensureAdminPermissions(prisma, adminRole.id);
   await maybeSeedDefaultAdmin(adminRole.id);
   await seedReferenceData();
 
@@ -150,50 +86,6 @@ function isNonLocalDatabaseUrl(databaseUrl) {
   }
 }
 
-async function ensureAdminRole() {
-  return prisma.role.upsert({
-    where: { key: "ADMIN" },
-    update: {
-      description: "Full administration access",
-      isSystem: true,
-      requiresUserAssignment: true,
-    },
-    create: {
-      key: "ADMIN",
-      description: "Full administration access",
-      isSystem: true,
-      requiresUserAssignment: true,
-    },
-  });
-}
-
-async function ensureAdminPermissions(adminRoleId) {
-  const permissions = await Promise.all(
-    SYSTEM_PERMISSIONS.map((permission) =>
-      prisma.permission.upsert({
-        where: { key: permission.key },
-        update: {
-          description: permission.description,
-          isSystem: true,
-        },
-        create: {
-          key: permission.key,
-          description: permission.description,
-          isSystem: true,
-        },
-      }),
-    ),
-  );
-
-  await prisma.rolePermission.createMany({
-    data: permissions.map((permission) => ({
-      permissionId: permission.id,
-      roleId: adminRoleId,
-    })),
-    skipDuplicates: true,
-  });
-}
-
 async function maybeSeedDefaultAdmin(adminRoleId) {
   if (!process.argv.includes(DEFAULT_ADMIN_FLAG)) {
     console.log(
@@ -202,26 +94,12 @@ async function maybeSeedDefaultAdmin(adminRoleId) {
     return;
   }
 
-  const adminUser = await prisma.user.upsert({
-    where: { username: "admin" },
-    update: {
-      displayName: "Sistem Yoneticisi",
-      email: "admin@local.test",
-      isActive: true,
-      passwordHash: hashPassword("1234"),
-    },
-    create: {
-      displayName: "Sistem Yoneticisi",
-      email: "admin@local.test",
-      isActive: true,
-      passwordHash: hashPassword("1234"),
-      username: "admin",
-    },
-  });
-
-  await prisma.userRole.createMany({
-    data: [{ roleId: adminRoleId, userId: adminUser.id }],
-    skipDuplicates: true,
+  await ensureAdminUser(prisma, {
+    adminRoleId,
+    email: "admin@local.test",
+    fullName: "Sistem Yoneticisi",
+    password: "1234",
+    username: "admin",
   });
 
   console.log("Created or reset admin/1234 for local development.");
