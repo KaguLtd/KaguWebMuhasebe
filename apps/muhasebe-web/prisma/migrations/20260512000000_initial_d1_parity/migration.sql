@@ -1,4 +1,4 @@
-﻿-- CreateSchema
+-- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
 -- CreateEnum
@@ -23,10 +23,7 @@ CREATE TYPE "DeliveryMergeRole" AS ENUM ('NORMAL', 'MERGED_RESULT', 'MERGED_SOUR
 CREATE TYPE "ReceiptKind" AS ENUM ('COLLECTION', 'PAYMENT');
 
 -- CreateEnum
-CREATE TYPE "DocumentStatus" AS ENUM ('DRAFT', 'APPROVED', 'VOID');
-
--- AlterEnum
-ALTER TYPE "DocumentStatus" ADD VALUE 'SUPERSEDED';
+CREATE TYPE "DocumentStatus" AS ENUM ('DRAFT', 'APPROVED', 'VOID', 'SUPERSEDED');
 
 -- CreateEnum
 CREATE TYPE "StockCountStatus" AS ENUM ('DRAFT', 'FINISHED', 'VOID');
