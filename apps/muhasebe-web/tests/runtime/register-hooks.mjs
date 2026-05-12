@@ -3,7 +3,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, extname, resolve } from "node:path";
 import { registerHooks } from "node:module";
 
-import ts from "../../node_modules/typescript/lib/typescript.js";
+import ts from "typescript";
 
 const runtimeRoot = dirname(fileURLToPath(import.meta.url));
 const appRoot = resolve(runtimeRoot, "..", "..");
