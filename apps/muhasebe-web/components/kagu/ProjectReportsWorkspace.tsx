@@ -46,18 +46,29 @@ export function ProjectReportsWorkspace({ lookups }: { lookups: LookupMap }) {
     () => selectableLookupOptions(lookups.warehouses, warehouseId),
     [lookups.warehouses, warehouseId],
   );
+  const handleProjectChange = (value?: string) => {
+    setProjectId(value);
 
-  useEffect(() => {
-    if (!projectId) {
+    if (!value) {
+      setLoading(false);
       setStockReport(null);
       setInvoiceReport(null);
       setUsageReport(null);
       setMarginReport(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!projectId) {
       return;
     }
 
     let active = true;
-    setLoading(true);
+    queueMicrotask(() => {
+      if (active) {
+        setLoading(true);
+      }
+    });
 
     const [dateFrom, dateTo] = dateRange;
     const sharedQuery = { dateFrom, dateTo, warehouseId };
@@ -118,7 +129,7 @@ export function ProjectReportsWorkspace({ lookups }: { lookups: LookupMap }) {
         <Space size={8} wrap>
           <Select
             allowClear
-            onChange={(value) => setProjectId(value)}
+            onChange={handleProjectChange}
             options={projectOptions}
             placeholder="Proje sec"
             showSearch

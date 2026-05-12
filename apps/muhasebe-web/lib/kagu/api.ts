@@ -315,7 +315,7 @@ function parseErrorMessage(responseText: string) {
   }
 }
 
-function querySuffix(query: Record<string, unknown>) {
+function querySuffix(query: object) {
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(query)) {

@@ -490,7 +490,7 @@ function resolveRequiredLookups({
   masterModule?: MasterModuleConfig;
   settingsMenu: string;
   settingsModule?: MasterModuleConfig;
-}) {
+}): LookupEntity[] {
   if (activeMenu === "dashboard") {
     return [] as LookupEntity[];
   }
