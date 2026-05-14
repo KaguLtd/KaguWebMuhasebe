@@ -25,6 +25,25 @@ Onerilen DB adi: `kagu_muhasebe_acceptance`.
 & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' -U postgres -h localhost -p 5432 -d postgres -c "CREATE DATABASE kagu_muhasebe_acceptance;"
 ```
 
+## Windows C:\KaguLocal Isolated PostgreSQL Cluster
+
+Bu local acceptance akisi mevcut Windows PostgreSQL servisine dokunmadan `C:\KaguLocal\pgdata` altinda ayri bir PostgreSQL cluster kullanir. Varsayilan port `55432`, host `localhost`, DB adi `kagu_muhasebe_acceptance`, kullanici `postgres` olur. Repo checkout konumu `C:\KaguLocal\KaguWebMuhasebe` olmalidir.
+
+PostgreSQL 18 disinda bir surum kullaniyorsan `-PgBin` degerini kurulu PostgreSQL `bin` klasorune gore degistir.
+
+```powershell
+cd C:\KaguLocal\KaguWebMuhasebe
+
+.\scripts\windows-local-acceptance.ps1 init -PgBin "C:\Program Files\PostgreSQL\18\bin"
+.\scripts\windows-local-acceptance.ps1 start -PgBin "C:\Program Files\PostgreSQL\18\bin"
+.\scripts\windows-local-acceptance.ps1 reset-db -PgBin "C:\Program Files\PostgreSQL\18\bin"
+.\scripts\windows-local-acceptance.ps1 app-check -PgBin "C:\Program Files\PostgreSQL\18\bin"
+.\scripts\windows-local-acceptance.ps1 bootstrap-admin -PgBin "C:\Program Files\PostgreSQL\18\bin"
+.\scripts\windows-local-acceptance.ps1 dev -PgBin "C:\Program Files\PostgreSQL\18\bin"
+```
+
+`POSTGRES_PASSWORD` env varsa DB komutlari onu kullanir; yoksa script sifreyi guvenli prompt ile ister. `bootstrap-admin` modu `ADMIN_PASSWORD` env varsa onu kullanir; yoksa admin sifresini guvenli prompt ile ister. Sifreler loglanmaz.
+
 ## Teknik Komut Sirasi
 
 ```powershell
