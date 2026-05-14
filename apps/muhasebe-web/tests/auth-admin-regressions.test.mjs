@@ -93,6 +93,7 @@ test("document repository keeps history through supersede flow and period lock c
   );
 
   assert.match(source, /SUPERSEDED/);
+  assert.match(source, /DbDocumentStatus\.SUPERSEDED/);
   assert.match(source, /deactivateDocumentEffects/);
   assert.match(source, /assertPeriodLockAllows/);
   assert.match(source, /CREATE_REVISION_DRAFT|SUPERSEDE/);

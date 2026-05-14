@@ -1334,7 +1334,9 @@ function dbDocumentStatus(value: unknown): DbDocumentStatus {
     ? DbDocumentStatus.APPROVED
     : value === "VOID"
       ? DbDocumentStatus.VOID
-      : DbDocumentStatus.DRAFT;
+      : value === "SUPERSEDED"
+        ? DbDocumentStatus.SUPERSEDED
+        : DbDocumentStatus.DRAFT;
 }
 
 function dbInvoiceKind(value: unknown): DbInvoiceKind {

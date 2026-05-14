@@ -11,7 +11,7 @@
 
 - Muhasebe verisi local dosya, Electron, SQLite veya browser state uzerinden tutulmaz; runtime API path'leri Prisma/PostgreSQL repository katmanina baglidir.
 - API route'lari proxy seviyesinde session cookie olmadan 401 dondurur; public kalan route'lar sadece `/login`, `/api/health` ve sign-out akisi gibi guvenli giris/cikis noktalaridir.
-- Placeholder auth production'da default olarak kapali kalir. Gecici demo icin acilacaksa `KAGU_ALLOW_PLACEHOLDER_AUTH=true` bilincli olarak verilmelidir; gercek kullanici erisimi icin auth/roles fazi tamamlanmalidir.
+- Placeholder auth production'da kapali kalir; runtime yalnizca DB-backed session kabul eder.
 - Belge numarasi, registry, ledger entry, stock movement, audit ve revision yazimlari transaction tabanli repository katmaninda kalir.
 - Production migration icin `prisma migrate deploy` kullanilir; serverda `migrate dev` calistirilmez.
 
@@ -23,7 +23,7 @@
 | `KAGU_APP_ORIGIN` veya `NEXT_PUBLIC_APP_URL` | Zorunlu | `https://muhasebe.kagultd.com` |
 | `AUTH_SECRET`, `KAGU_SESSION_SECRET` veya `SESSION_SECRET` | Zorunlu | Gercek auth/session fazi icin uzun random secret |
 | `KAGU_BACKUP_PLAN_ACK=true` | Zorunlu | Sadece backup/restore planlari yazildiktan sonra true yapilir |
-| `KAGU_ALLOW_PLACEHOLDER_AUTH` | Varsayilan false | Production'da true olmamali |
+| `KAGU_ALLOW_PLACEHOLDER_AUTH` | Kullanilmaz | Production'da placeholder auth kapali kalir |
 
 ## Release Checklist
 

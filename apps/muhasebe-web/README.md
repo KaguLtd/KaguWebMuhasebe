@@ -46,8 +46,8 @@ NEXT_PUBLIC_APP_NAME="KAGU Muhasebe Web"
 ```
 
 Production guardrail'leri ve backup acknowledgement ayrintisi icin
-[docs/DEPLOYMENT.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/DEPLOYMENT.md)
-ile [docs/BACKUP_RESTORE.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/BACKUP_RESTORE.md)
+[docs/DEPLOYMENT.md](../../docs/DEPLOYMENT.md)
+ile [docs/BACKUP_RESTORE.md](../../docs/BACKUP_RESTORE.md)
 dosyalarina bakin.
 
 ## Sinirlar ve Non-Goals
@@ -58,6 +58,6 @@ dosyalarina bakin.
 
 ## Devam Dokumanlari
 
-- Veri modeli: [docs/DATA_MODEL.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/DATA_MODEL.md)
-- Rapor durumu: [docs/REPORTS_PARITY.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/REPORTS_PARITY.md)
-- Migration ve parity notlari: [docs/INDEX.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/INDEX.md)
+- Veri modeli: [docs/DATA_MODEL.md](../../docs/DATA_MODEL.md)
+- Rapor durumu: [docs/REPORTS_PARITY.md](../../docs/REPORTS_PARITY.md)
+- Migration ve parity notlari: [docs/INDEX.md](../../docs/INDEX.md)
