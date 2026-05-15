@@ -48,8 +48,8 @@ export default async function LoginPage({
             </div>
             <div className="mt-6 border border-dashed border-[var(--line)] bg-white/70 px-4 py-3 text-xs leading-6 text-slate-600">
               Kullanici girisi, ayarlar ve ana operasyon modulleri ayni oturum
-              modeliyle calisir. Modullerin detay akislarinda parity calismasi
-              ilerledikce bu panel dogrudan uretim akisini yansitacak.
+              modeliyle calisir. Bu panel yerel kabul testleri ve urun regresyon
+              kontrolleriyle dogrudan uretim akisini destekler.
             </div>
           </div>
           <div className="bg-[#e5ebf3] p-6">

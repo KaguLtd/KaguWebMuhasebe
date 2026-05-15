@@ -1,14 +1,9 @@
-# Export Scripts Plan
+# Export Scripts
 
-Bu klasor, web uygulamasindan alinacak export araclari icin ayrildi.
+Bu klasor rapor ve veri cikti yardimcilarina ayrilmistir.
 
-## Muhtemel Ciktilar
+Yeni export scriptleri eklenirken:
 
-- CSV
-- Excel
-- PDF
-- print-friendly rapor dokumleri
-
-## Not
-
-Kolonlar, filtreler ve toplamlar legacy raporlar geldikten sonra sabitlenecek.
+- Kolonlar, filtreler ve toplamlar urun rapor beklentileriyle uyumlu tutulur.
+- Cikti formati ve hedef kullanici dokumante edilir.
+- Finansal veya operasyonel toplamlar icin regression testi eklenir.

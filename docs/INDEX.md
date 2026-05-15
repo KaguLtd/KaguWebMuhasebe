@@ -1,49 +1,28 @@
-# Documentation Index
+# KaguWebMuhasebe Documentation Index
 
-Bu klasor, KAGU ERP masaustu uygulamasinin web yeniden insasi icin ana referans dokumantasyonunu tutar.
+Bu indeks KaguWebMuhasebe urun dokumantasyonunun ana girisidir. Dokumanlar cari, proje, stok, irsaliye, fatura ve operasyon takibi yapan bagimsiz web panelinin kapsam, kabul, veri modeli ve canliya alma sureclerini anlatir.
 
-## Cekirdek Planlama
+## Ana Dokumanlar
 
-| Dosya | Amac |
+| Dokuman | Amac |
 | --- | --- |
-| `MIGRATION_PLAN.md` | Faz bazli genel gecis stratejisi |
-| `DECISIONS.md` | Teknik ve surec karar kaydi |
-| `SUBAGENT_PLAN.md` | Fazlara gore onerilen subagent uzmanliklari |
+| [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) | Urun kapsami, kapsam disi alanlar ve operasyonel sinirlar |
+| [DATA_MODEL.md](DATA_MODEL.md) | PostgreSQL/Prisma veri modeli ve repository katmani notlari |
+| [DELIVERY_INVOICE_WORKFLOW_PLAN.md](DELIVERY_INVOICE_WORKFLOW_PLAN.md) | Irsaliye ve fatura akisi plan notlari |
+| [ACCEPTANCE_TEST_PLAN.md](ACCEPTANCE_TEST_PLAN.md) | Teknik ve manuel local acceptance akisi |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Production guardrail'leri ve release checklist |
+| [BACKUP_RESTORE.md](BACKUP_RESTORE.md) | Backup, restore ve smoke test runbook'u |
 
-## Legacy ve Parity
+## Destek Dokumanlari
 
-| Dosya | Amac |
+| Dokuman | Amac |
 | --- | --- |
-| `LEGACY_AUDIT.md` | Masaustu uygulama analizi |
-| `LEGACY_INVENTORY.md` | `legacy/` klasor doluluk raporu |
-| `LEGACY_READYNESS.md` | Intake ve capture hazirlik ozet raporu |
-| `MODULE_PARITY.md` | Modul bazli takip tablosu |
-| `UI_PARITY.md` | Ekran ve gorunum esleme kaydi |
-| `REPORTS_PARITY.md` | Rapor ciktilari ve export parity kaydi |
+| [PRODUCT_MODULE_STATUS.md](PRODUCT_MODULE_STATUS.md) | Modul durumlari ve test yuzeyleri |
+| [UI_NOTES.md](UI_NOTES.md) | Canli uygulama UI notlari |
+| [REPORTS_STATUS.md](REPORTS_STATUS.md) | Rapor yuzeyi durum notlari |
 
-## Veri ve Operasyon
+## Kullanim
 
-| Dosya | Amac |
-| --- | --- |
-| `DATA_MODEL.md` | PostgreSQL modelleme notlari |
-| `DATA_MIGRATION.md` | Veri tasima ve dogrulama plani |
-| `DEPLOYMENT.md` | Production dagitim ve operasyon notlari |
-
-## DevOps Surface
-
-| Dosya | Amac |
-| --- | --- |
-| `../scripts/README.md` | Root script contract'i ve evidence refresh akisi |
-| `.github/workflows/docs-devops.yml` | Docs/devops surface CI contract'i |
-
-## Su Anki En Buyuk Blokaj
-
-- Legacy masaustu uygulama kaynaklari bu repoda bulunmuyor.
-- Bu nedenle parity ve finansal davranis cikarimi ancak `legacy/` klasoru doldurulduktan sonra derinlestirilebilir.
-
-## Evidence Yorumu
-
-- `LEGACY_INVENTORY.md` ve `LEGACY_READYNESS.md` doluluk ve capture coverage
-  snapshot'idir; parity kabul kaydi degildir.
-- `tests/parity/README.md` altindaki test stratejisi, evidence gelmeden
-  "acceptance parity" iddiasi uretmemelidir.
+- Local acceptance icin [ACCEPTANCE_TEST_PLAN.md](ACCEPTANCE_TEST_PLAN.md) izlenir.
+- Canliya alma ve ortam kontrati icin [DEPLOYMENT.md](DEPLOYMENT.md) izlenir.
+- Veri modeli degisiklikleri icin [DATA_MODEL.md](DATA_MODEL.md) ve app icindeki Prisma dosyalari birlikte kontrol edilir.

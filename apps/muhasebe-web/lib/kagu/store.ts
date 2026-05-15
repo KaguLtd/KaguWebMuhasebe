@@ -154,7 +154,7 @@ export function getBootstrap(): AppSnapshot & {
   const dashboard = getDashboardTotals();
 
   return {
-    dataFolder: "PostgreSQL target / in-memory parity store",
+    dataFolder: "PostgreSQL target / in-memory test store",
     dbPath: "DATABASE_URL",
     metrics: [
       { key: "accounts", label: "Cari Hesap", value: accountCount },

@@ -27,7 +27,6 @@
 
 ## Release Checklist
 
-- Repo root'unda `npm run evidence:refresh`
 - Repo root'unda `npm run verify`
 - Repo root'unda `npm run production:check`
 - `npx prisma migrate deploy`
@@ -57,14 +56,11 @@ ve aktif ADMIN kullanicisini hazirlar.
 - Workflow dosyasi: `.github/workflows/docs-devops.yml`
 - Tetikleyiciler: `push`, `pull_request`, `workflow_dispatch`
 - Yuzey: root `README.md`, root `package.json`, `scripts/README.md`, `docs/**`,
-  `tests/parity/README.md`, `apps/muhasebe-web/README.md`, workflow dosyalari
+  `tests/regression/README.md`, `apps/muhasebe-web/README.md`, workflow dosyalari
 - Sira:
   1. `npm ci --prefix apps/muhasebe-web`
-  2. `npm run evidence:refresh`
-  3. `npm run verify`
-  4. `npm run production:check`
-- Workflow `docs/LEGACY_INVENTORY.md` ve `docs/LEGACY_READYNESS.md`
-  snapshot'larini `legacy-evidence` artifact'i olarak saklar.
+  2. `npm run verify`
+  3. `npm run production:check`
 - Workflow'daki `production:check`, gercek deploy yapmaz; yalnizca env contract'inin
   eksik olmadigini dogrular.
 - Bu workflow bilerek docs/devops contract gate'idir; tam uygulama release gate'i

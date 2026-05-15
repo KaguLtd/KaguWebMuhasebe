@@ -1,0 +1,98 @@
+{
+  "suite": "product-regression",
+  "reportName": "warehouse-inventory",
+  "reportArgs": {
+    "warehouseId": "warehouse-main"
+  },
+  "goldenCsv": "tests/regression/fixtures/warehouse-inventory-main.golden.csv",
+  "operations": [
+    {
+      "entity": "invoices",
+      "approve": true,
+      "payload": {
+        "invoiceKind": "PURCHASE",
+        "invoiceType": "STANDARD",
+        "actualDocNo": "AF-GOLDEN-001",
+        "accountId": "account-supplier-1",
+        "warehouseId": "warehouse-main",
+        "docDate": "2026-05-04",
+        "currency": "TRY",
+        "lines": [
+          {
+            "itemId": "item-raw-steel",
+            "quantity": 10,
+            "unitPriceMinor": 2500,
+            "vatRateBps": 2000
+          }
+        ]
+      }
+    },
+    {
+      "entity": "invoices",
+      "approve": true,
+      "payload": {
+        "invoiceKind": "PURCHASE",
+        "invoiceType": "STANDARD",
+        "actualDocNo": "AF-GOLDEN-002",
+        "accountId": "account-supplier-1",
+        "warehouseId": "warehouse-main",
+        "docDate": "2026-05-04",
+        "currency": "TRY",
+        "lines": [
+          {
+            "itemId": "item-erp-service",
+            "quantity": 5,
+            "unitPriceMinor": 1000,
+            "vatRateBps": 2000
+          }
+        ]
+      }
+    },
+    {
+      "entity": "invoices",
+      "approve": true,
+      "payload": {
+        "invoiceKind": "SALES",
+        "invoiceType": "STANDARD",
+        "actualDocNo": "SF-GOLDEN-001",
+        "accountId": "account-customer-1",
+        "projectId": "project-web",
+        "warehouseId": "warehouse-main",
+        "docDate": "2026-05-05",
+        "currency": "TRY",
+        "lines": [
+          {
+            "itemId": "item-raw-steel",
+            "quantity": 4,
+            "unitPriceMinor": 3000,
+            "vatRateBps": 2000
+          }
+        ]
+      }
+    },
+    {
+      "entity": "deliveryNotes",
+      "approve": true,
+      "payload": {
+        "direction": "OUT",
+        "isReturn": true,
+        "actualDocNo": "IRS-GOLDEN-001",
+        "accountId": "account-customer-1",
+        "projectId": "project-web",
+        "warehouseId": "warehouse-main",
+        "docDate": "2026-05-05",
+        "lines": [
+          {
+            "itemId": "item-raw-steel",
+            "quantity": 1,
+            "unitPriceMinor": 0,
+            "vatRateBps": 2000
+          }
+        ]
+      }
+    }
+  ],
+  "expected": {
+    "rowCount": 2
+  }
+}

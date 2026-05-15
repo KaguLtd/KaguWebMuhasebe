@@ -198,7 +198,7 @@ export async function saveDbDocumentDraft(
       superseded_by_id: existing?.superseded_by_id ?? null,
     });
 
-    await assertDocumentParityWithTx(tx, entity, nextHeader, payload.lines ?? []);
+    await assertDocumentRulesWithTx(tx, entity, nextHeader, payload.lines ?? []);
     await reserveInvoiceDraftNumber(tx, entity, id, nextHeader);
 
     const nextLines = normalizeLines(entity, id, payload.lines ?? [], {
@@ -247,7 +247,7 @@ export async function approveDbDocument(
 
     const lines = await getLines(tx, entity, id);
 
-    await assertDocumentParityWithTx(tx, entity, header, lines);
+    await assertDocumentRulesWithTx(tx, entity, header, lines);
     validateApproval(entity, header, lines);
     await assertPeriodLockAllows(tx, String(header.doc_date), "Belge tarihi kilitli donemde");
 
@@ -1563,7 +1563,7 @@ async function describeTransferSide(
     : `${note ? `${note} | ` : ""}Virman <- ${sourceLabel}`;
 }
 
-async function assertDocumentParityWithTx(
+async function assertDocumentRulesWithTx(
   tx: Tx,
   entity: DocumentEntity,
   header: DataRecord,

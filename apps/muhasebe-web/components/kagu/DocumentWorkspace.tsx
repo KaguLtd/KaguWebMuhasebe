@@ -591,7 +591,7 @@ export function DocumentWorkspace({
       >
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           <Typography.Text>
-            KAGU-ERP-D1 mantiginda iptal ve onayli belge degisikligi gerekce ile izlenir.
+            Iptal ve onayli belge degisikligi gerekce ile izlenir.
           </Typography.Text>
           <Input.TextArea
             autoSize={{ minRows: 3 }}

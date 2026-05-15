@@ -1,5 +1,5 @@
 {
-  "name": "kagu-erp-web-rebuild-workspace",
+  "name": "kagu-web-muhasebe-workspace",
   "private": true,
   "scripts": {
     "dev": "npm --prefix apps/muhasebe-web run dev",
@@ -9,14 +9,11 @@
     "build": "npm --prefix apps/muhasebe-web run build",
     "verify": "npm --prefix apps/muhasebe-web run verify",
     "production:check": "npm --prefix apps/muhasebe-web run production:check",
-    "parity:test": "npm run test",
+    "prisma:generate": "npm --prefix apps/muhasebe-web run prisma:generate",
+    "prisma:validate": "npm --prefix apps/muhasebe-web run prisma:validate",
+    "regression:test": "npm run test",
     "seed:dev": "npm --prefix apps/muhasebe-web run seed:dev",
     "admin:bootstrap": "npm --prefix apps/muhasebe-web run admin:bootstrap",
-    "db:check-orphans": "npm --prefix apps/muhasebe-web run db:check-orphans",
-    "legacy:inventory": "node scripts/legacy-inventory.mjs",
-    "legacy:inventory:write": "node scripts/legacy-inventory.mjs --write",
-    "legacy:bootstrap:modules": "node scripts/bootstrap-legacy-notes.mjs",
-    "legacy:readiness:write": "node scripts/legacy-readiness.mjs --write",
-    "evidence:refresh": "npm run legacy:inventory:write && npm run legacy:readiness:write"
+    "db:check-orphans": "npm --prefix apps/muhasebe-web run db:check-orphans"
   }
 }

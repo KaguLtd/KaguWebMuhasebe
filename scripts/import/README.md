@@ -1,14 +1,9 @@
-# Import Scripts Plan
+# Import Scripts
 
-Bu klasor, legacy dis kaynaklardan veri alma scriptleri icin ayrildi.
+Bu klasor ileride urun icin gerekli olabilecek veri alma yardimcilarina ayrilmistir.
 
-## Beklenen Kaynaklar
+Yeni import scriptleri eklenirken:
 
-- CSV
-- Excel
-- DB export
-- ozel masaustu cikti formatlari
-
-## Not
-
-Formatlar legacy artefaktlari geldikten sonra dogrulanacak.
+- Kaynak format acikca dokumante edilir.
+- Veri dogrulama ve hata raporlama stdout/stderr uzerinden izlenebilir olur.
+- Canli veriye yazmadan once dry-run veya raporlama modu tercih edilir.

@@ -1,20 +1,9 @@
-# Migration Scripts Plan
+# Migration Scripts
 
-Bu klasor, legacy veriyi PostgreSQL'e tasirken kullanilacak scriptler icindir.
+Bu klasor veritabani veya veri tasima yardimcilari icin ayrilmistir.
 
-## Hedef Script Tipleri
+Kurallar:
 
-- `analyze-*`: legacy veri formatini cozen scriptler
-- `import-*`: yeni veritabanina yukleyen scriptler
-- `validate-*`: legacy ve web toplamlarini karsilastiran scriptler
-
-## Kurallar
-
-- Finansal alanlarda `Decimal` mantigi korunmali.
-- Veri kaybi kabul edilmez.
-- Scriptler dry-run desteklemeli.
-- Hata raporlari ayri dosya veya tabloya yazilmali.
-
-## Blocker
-
-Legacy veri ornegi gelmeden script implementasyonu baslatilmayacak.
+- Prisma schema ve migration dosyalari app altinda tutulur.
+- Canli ortamda `prisma migrate deploy` kullanilir.
+- Veri tasima scriptleri idempotent, loglanabilir ve once test verisiyle dogrulanabilir olmalidir.

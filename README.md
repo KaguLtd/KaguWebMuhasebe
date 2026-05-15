@@ -1,40 +1,20 @@
-# KAGU Mini Muhasebe / Operasyon Paneli
+# KaguWebMuhasebe
 
-Bu repo, kucuk ve orta olcekli firmalar icin `cari hesap`, `stok`, `irsaliye`,
-`fatura`, `tahsilat/odeme` ve `proje bazli hareket takibi` sunan mini
-muhasebe/operasyon panelinin web uygulama kodunu icerir.
-
-Bu urun bilincli olarak dar kapsamli konumlanir. `Genel muhasebe`,
-`beyanname`, `mizan`, `bilanco` ve tam yasal raporlama uretimi hedeflenmez.
+KaguWebMuhasebe, KAGU icin bagimsiz web tabanli operasyon panelidir. Uygulama cari, proje, stok, irsaliye, fatura, tahsilat/odeme, virman ve proje bazli malzeme takibi akislarini tek bir web yuzeyinde toplar.
 
 ## Kapsam
 
 - Cari hesap ve proje baglantili hareket takibi
 - Depo, malzeme ve stok hareketi gorunurlugu
 - Irsaliye, fatura, tahsilat/odeme ve virman akislari
-- Proje bazli operasyon raporlari
-- PostgreSQL tabanli veri modeli, oturum ve production guardrail'leri
+- Proje bazli malzeme kullanimi ve operasyon raporlari
+- PostgreSQL tabanli veri modeli, oturum, rol ve production guardrail'leri
 
-## Sinirlar
+## Kapsam Disi
 
-- Legacy masaustu uygulama parity'si tamamlanmis kabul edilmez
-- `production:check` ve test varligi tek basina production-ready iddiasi degildir
-- Tam kur cevrimi, PITR/HA ve full project P&L bu fazin disindadir
-
-## Mevcut Durum
-
-- `apps/muhasebe-web` altinda calisan Next.js uygulamasi bulunur
-- Prisma/PostgreSQL veri modeli, master data, belge akislari ve temel raporlar aktiftir
-- Yetki, oturum, period lock ve deployment guardrail'leri vardir
-- Legacy evidence ve parity dokumanlari `docs/` altinda tutulur
-
-## Klasorler
-
-- `apps/muhasebe-web`: uygulama, API route'lari ve UI
-- `docs`: veri modeli, deployment, parity ve operasyon notlari
-- `scripts`: operasyon, migration ve destek script'leri
-- `tests/parity`: parity ve regresyon testleri
-- `legacy`: referans masaustu kaynaklari ve evidence alani
+- Resmi muhasebe ve beyanname uretimi
+- E-defter, e-fatura ve tam yasal raporlama
+- Tam kur cevrimi, PITR/HA ve full project P&L
 
 ## Hizli Baslangic
 
@@ -55,15 +35,10 @@ npm run verify
 npm run production:check
 ```
 
-## Operasyon Notlari
+## Dokumanlar
 
-- Backup ve restore runbook'u: [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md)
-- Deployment guardrail'leri: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
-- Dokuman haritasi: [docs/INDEX.md](docs/INDEX.md)
 - Acceptance test plani: [docs/ACCEPTANCE_TEST_PLAN.md](docs/ACCEPTANCE_TEST_PLAN.md)
-
-## Legacy ve Parity
-
-Bu repo legacy masaustu urunden gelen akislari referans alir, ancak legacy kanit
-olmadan tam parity vaadi vermez. Evidence snapshot'lari ilerlemeyi gosterir;
-tek basina kabul kriteri yerine gecmez.
+- Deployment: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- Backup ve restore: [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md)
+- Veri modeli: [docs/DATA_MODEL.md](docs/DATA_MODEL.md)
+- Dokuman indeksi: [docs/INDEX.md](docs/INDEX.md)

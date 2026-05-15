@@ -1,31 +1,23 @@
 # Scripts
 
-Bu klasor, workspace seviyesindeki otomasyon girislerini ve uretilen evidence
-raporlarini yonetir.
+Bu klasor workspace seviyesindeki operasyon, backup, restore ve local acceptance yardimci scriptlerini tutar.
 
 ## Root Komut Contract
 
-Bu komutlar repo root'undan calistirilir ve README, deployment dokusu ve GitHub
-Actions workflow'u ile ayni contract'i paylasir:
+Bu komutlar repo root'undan calistirilir:
 
 | Komut | Amac |
 | --- | --- |
-| `npm run dev` | `apps/muhasebe-web` gelistirme sunucusunu root'tan baslatir |
+| `npm run dev` | `apps/muhasebe-web` gelistirme sunucusunu baslatir |
 | `npm run lint` | Web uygulamasi lint kontrolu |
 | `npm run typecheck` | Web uygulamasi TypeScript kontrolu |
-| `npm run test` | `tests/parity` altindaki mevcut otomatik testleri calistirir |
+| `npm run test` | App ve urun regression testlerini calistirir |
 | `npm run build` | Web uygulamasi production build'i |
-| `npm run verify` | Docs/devops surface icin parity regression gate'i |
+| `npm run verify` | Prisma, typecheck, lint, test ve build zinciri |
 | `npm run production:check` | Production env guardrail kontrolu |
-| `npm run evidence:refresh` | `docs/LEGACY_INVENTORY.md` ve `docs/LEGACY_READYNESS.md` snapshot'larini yeniler |
-
-## Legacy Evidence Komutlari
-
-| Komut | Cikti |
-| --- | --- |
-| `npm run legacy:inventory:write` | `docs/LEGACY_INVENTORY.md` |
-| `npm run legacy:readiness:write` | `docs/LEGACY_READYNESS.md` |
-| `npm run legacy:bootstrap:modules` | `legacy/notes` altindaki module/report capture taslaklarini acmaya yardim eder |
+| `npm run seed:dev` | Yerel gelistirme verisi yukler |
+| `npm run admin:bootstrap` | Admin kullanicisini hazirlar |
+| `npm run db:check-orphans` | Veritabani orphan kontrolu |
 
 ## Backup Ve Restore Scriptleri
 
@@ -34,17 +26,11 @@ Actions workflow'u ile ayni contract'i paylasir:
 | `./scripts/backup-postgres.sh` | `pg_dump -Fc`, checksum ve manifest ureterek gecelik backup alir |
 | `./scripts/restore-postgres.sh /path/to/archive.dump` | hedef veritabanina manuel restore yapar |
 | `./scripts/restore-smoke.sh /path/to/archive.dump` | restore sonrasi orphan, readiness ve health smoke kontrolu calistirir |
+| `./scripts/windows-local-acceptance.ps1` | Windows uzerinde izole local acceptance ortamlarini yonetir |
 
-Detayli runbook icin [docs/BACKUP_RESTORE.md](/C:/Users/ahmet/OneDrive/Belgeler/New%20project%202/docs/BACKUP_RESTORE.md)
-dosyasina bakin.
+Detayli runbook icin [docs/BACKUP_RESTORE.md](../docs/BACKUP_RESTORE.md) dosyasina bakin.
 
 ## Workflow Kullanimi
 
-- `.github/workflows/docs-devops.yml` once `npm run evidence:refresh`, sonra
-  `npm run verify` ve `npm run production:check` calistirir.
-- Workflow, evidence snapshot dosyalarini artifact olarak yukler.
-- `npm run verify`, bilerek yalnizca bu yuzeyin test/evidence contract'ini gate'ler;
-  uygulama tarafindaki daha genis `lint`, `typecheck` ve `build` kontrolleri
-  ayri komutlar olarak korunur.
-- Root contract degistiginde bu dosya, root `README.md` ve
-  `docs/DEPLOYMENT.md` birlikte guncellenmelidir.
+- `.github/workflows/docs-devops.yml` Prisma, typecheck, lint, test, build ve production readiness adimlarini calistirir.
+- Root contract degistiginde bu dosya, root `README.md` ve `docs/DEPLOYMENT.md` birlikte guncellenmelidir.

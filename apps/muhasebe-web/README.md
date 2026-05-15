@@ -1,11 +1,8 @@
 # Muhasebe Web Uygulamasi
 
-Bu uygulama, kucuk ve orta olcekli firmalar icin `cari hesap`, `stok`,
-`irsaliye`, `fatura`, `tahsilat/odeme` ve `proje bazli hareket takibi` saglayan
-mini muhasebe/operasyon panelinin Next.js uygulamasidir.
+Bu uygulama KaguWebMuhasebe urununun Next.js web panelidir. Cari, proje, stok, irsaliye, fatura, tahsilat/odeme, virman ve proje bazli malzeme takibi icin operasyonel bir yuzey saglar.
 
-Urun siniri bilincli olarak dardir: resmi `genel muhasebe`, `beyanname`,
-`mizan`, `bilanco` ve tam yasal raporlama hedeflenmez.
+Urun siniri bilincli olarak dardir: resmi genel muhasebe, beyanname, e-defter, e-fatura ve tam yasal raporlama hedeflenmez.
 
 ## Uygulama Yuzeyi
 
@@ -42,22 +39,13 @@ npm run production:check
 
 ```bash
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/kagu_muhasebe?schema=public"
-NEXT_PUBLIC_APP_NAME="KAGU Muhasebe Web"
+NEXT_PUBLIC_APP_NAME="KaguWebMuhasebe"
 ```
 
-Production guardrail'leri ve backup acknowledgement ayrintisi icin
-[docs/DEPLOYMENT.md](../../docs/DEPLOYMENT.md)
-ile [docs/BACKUP_RESTORE.md](../../docs/BACKUP_RESTORE.md)
-dosyalarina bakin.
-
-## Sinirlar ve Non-Goals
-
-- Legacy parity tamamlanmis kabul edilmez
-- Approximate invoice margin veya proje brut marji, tam muhasebesel karlilik degildir
-- Mixed currency konsolidasyonu ancak acik FX politikasi tanimlandiginda eklenmelidir
+Production guardrail'leri ve backup acknowledgement ayrintisi icin [docs/DEPLOYMENT.md](../../docs/DEPLOYMENT.md) ile [docs/BACKUP_RESTORE.md](../../docs/BACKUP_RESTORE.md) dosyalarina bakin.
 
 ## Devam Dokumanlari
 
 - Veri modeli: [docs/DATA_MODEL.md](../../docs/DATA_MODEL.md)
-- Rapor durumu: [docs/REPORTS_PARITY.md](../../docs/REPORTS_PARITY.md)
-- Migration ve parity notlari: [docs/INDEX.md](../../docs/INDEX.md)
+- Acceptance test plani: [docs/ACCEPTANCE_TEST_PLAN.md](../../docs/ACCEPTANCE_TEST_PLAN.md)
+- Deployment: [docs/DEPLOYMENT.md](../../docs/DEPLOYMENT.md)

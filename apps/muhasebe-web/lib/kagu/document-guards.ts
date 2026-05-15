@@ -11,21 +11,21 @@ import { getMaster } from "./store";
 type HeaderLike = DocumentPayload | DataRecord;
 type LineLike = DocumentLinePayload | DataRecord;
 
-export function assertDraftDocumentParity(
+export function assertDraftDocumentRules(
   entity: DocumentEntity,
   payload: DocumentPayload,
 ) {
-  applyDocumentParity(entity, payload, payload.lines ?? []);
+  applyDocumentRules(entity, payload, payload.lines ?? []);
 }
 
-export function assertStoredDocumentParity(
+export function assertStoredDocumentRules(
   entity: DocumentEntity,
   detail: DocumentDetail<DataRecord>,
 ) {
-  applyDocumentParity(entity, detail.header, detail.lines);
+  applyDocumentRules(entity, detail.header, detail.lines);
 }
 
-function applyDocumentParity(
+function applyDocumentRules(
   entity: DocumentEntity,
   header: HeaderLike,
   lines: LineLike[],

@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const testRoots = [resolve(appRoot, "tests"), resolve(appRoot, "..", "..", "tests", "parity")];
+const testRoots = [resolve(appRoot, "tests"), resolve(appRoot, "..", "..", "tests", "regression")];
 
 async function collectTests(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
