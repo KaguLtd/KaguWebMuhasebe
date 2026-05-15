@@ -196,6 +196,7 @@ export interface WarehouseDocumentMovementRow extends StockMovement {
   itemCode: string;
   itemName: string;
   projectLabel: string | null;
+  sourceDeliveryNoteNos: string | null;
   sourceRole: string;
   status: DocumentStatus | null;
 }

@@ -205,6 +205,10 @@ export async function saveDbDocumentDraft(
       regenerateLineIds: Boolean(superseded && superseded.id !== id),
     });
 
+    if (entity === "invoices" && existing && existing.status === "DRAFT") {
+      assertExistingLinkedInvoiceLinesPreserved(await getLines(tx, entity, id), nextLines);
+    }
+
     if (entity === "invoices") {
       applyInvoiceTotals(nextHeader, nextLines);
     }
@@ -401,13 +405,16 @@ export async function listDbDeliveryMergeCandidates(query: ListQuery = {}) {
     take: 200,
     where,
   });
+  const blockedSourceIds = await getSourceIdsInActiveMerge(prisma, rows.map((row) => row.id));
 
-  return rows.map((row) => ({
-    ...deliveryHeaderRecord(row),
-    line_count: row.lines.length,
-    lines: row.lines.map(deliveryLineRecord),
-    stock_direction: resolveDeliveryStockDirection(deliveryHeaderRecord(row)),
-  }));
+  return rows
+    .filter((row) => !blockedSourceIds.has(row.id))
+    .map((row) => ({
+      ...deliveryHeaderRecord(row),
+      line_count: row.lines.length,
+      lines: row.lines.map(deliveryLineRecord),
+      stock_direction: resolveDeliveryStockDirection(deliveryHeaderRecord(row)),
+    }));
 }
 
 export async function createDbMergedDeliveryNoteDraft(
@@ -434,7 +441,9 @@ export async function createDbMergedDeliveryNoteDraft(
     const header = validateMergeSources(sources, flow);
     const id = randomUUID();
     const now = new Date().toISOString();
-    const lines = buildMergedDeliveryLines(id, sources, flow);
+    await assertSourcesNotInActiveMerge(tx, sourceIds);
+
+    const { lineSources, lines } = buildMergedDeliveryLines(id, sources, flow);
 
     if (!lines.length) {
       throw new Error("Birlesim sonucu net miktar sifir; B-Irsaliye olusturulmadi");
@@ -470,9 +479,20 @@ export async function createDbMergedDeliveryNoteDraft(
 
     await upsertHeader(tx, "deliveryNotes", id, nextHeader);
     await replaceLines(tx, "deliveryNotes", id, lines);
-    await tx.deliveryNote.updateMany({
-      data: { supersededById: id },
-      where: { id: { in: sourceIds }, mergeRole: DbDeliveryMergeRole.NORMAL },
+    await tx.deliveryNoteMergeSource.createMany({
+      data: sourceIds.map((sourceId) => ({
+        id: randomUUID(),
+        mergedDeliveryNoteId: id,
+        sourceDeliveryNoteId: sourceId,
+      })),
+    });
+    await tx.deliveryNoteLineSource.createMany({
+      data: lineSources.map((source) => ({
+        deliveryNoteLineId: source.deliveryNoteLineId,
+        id: randomUUID(),
+        signedQuantity: source.signedQuantity,
+        sourceDeliveryNoteLineId: source.sourceDeliveryNoteLineId,
+      })),
     });
     await recordAudit(tx, "deliveryNotes", id, "CREATE_MERGE_DRAFT", {
       ...nextHeader,
@@ -515,8 +535,15 @@ export async function unmergeDbDeliveryNote(id: string, actorUserId: string) {
 
     await upsertHeader(tx, "deliveryNotes", id, nextHeader);
 
+    const mergeSources = await tx.deliveryNoteMergeSource.findMany({
+      select: { sourceDeliveryNoteId: true },
+      where: { mergedDeliveryNoteId: id },
+    });
     const sources = await tx.deliveryNote.findMany({
-      where: { supersededById: id, mergeRole: DbDeliveryMergeRole.MERGED_SOURCE },
+      where: {
+        id: { in: mergeSources.map((source) => source.sourceDeliveryNoteId) },
+        mergeRole: DbDeliveryMergeRole.MERGED_SOURCE,
+      },
     });
 
     for (const source of sources) {
@@ -542,10 +569,17 @@ export async function unmergeDbDeliveryNote(id: string, actorUserId: string) {
 }
 
 export async function listDbInvoiceDeliveryNoteCandidates(query: ListQuery = {}) {
+  const account = query.accountId
+    ? await prisma.account.findUnique({ where: { id: query.accountId } })
+    : null;
+  const invoiceKind = resolveInvoiceKindForAccount(
+    account?.accountKind,
+    typeof query.invoiceKind === "string" ? query.invoiceKind : null,
+  );
   const where: Prisma.DeliveryNoteWhereInput = {
     invoicedByInvoiceId: null,
     isEffective: true,
-    mergeRole: { not: DbDeliveryMergeRole.MERGED_SOURCE },
+    mergeRole: { in: [DbDeliveryMergeRole.NORMAL, DbDeliveryMergeRole.MERGED_RESULT] },
     status: DbDocumentStatus.APPROVED,
   };
 
@@ -568,12 +602,17 @@ export async function listDbInvoiceDeliveryNoteCandidates(query: ListQuery = {})
     where,
   });
 
-  return rows.map((row) => ({
-    ...deliveryHeaderRecord(row),
-    line_count: row.lines.length,
-    lines: row.lines.map(deliveryLineRecord),
-    stock_direction: resolveDeliveryStockDirection(deliveryHeaderRecord(row)),
-  }));
+  const blockedSourceIds = await getSourceIdsInActiveMerge(prisma, rows.map((row) => row.id));
+
+  return rows
+    .filter((row) => !blockedSourceIds.has(row.id))
+    .map((row) => ({
+      ...deliveryHeaderRecord(row),
+      line_count: row.lines.length,
+      lines: row.lines.map(deliveryLineRecord),
+      stock_direction: resolveDeliveryStockDirection(deliveryHeaderRecord(row)),
+    }))
+    .filter((row) => row.stock_direction === (invoiceKind === "SALES" ? "OUT" : "IN"));
 }
 
 export async function importDbDeliveryNoteToInvoiceDraft(
@@ -592,12 +631,29 @@ export async function importDbDeliveryNoteToInvoiceDraft(
 
   const deliveryHeader = deliveryHeaderRecord(deliveryNote);
   assertDeliveryNoteCanImport(deliveryHeader);
+  if (
+    deliveryHeader.merge_role === "NORMAL" &&
+    (await getSourceIdsInActiveMerge(prisma, [deliveryNote.id])).has(deliveryNote.id)
+  ) {
+    throw new Error("Aktif B-Irsaliye taslagina bagli irsaliye faturaya aktarilamaz");
+  }
 
   const invoiceKind = resolveInvoiceKindForDeliveryImport(
     deliveryNote.account.accountKind,
     typeof payload.invoiceKind === "string" ? payload.invoiceKind : null,
     resolveDeliveryStockDirection(deliveryHeader),
   );
+  const lineSources = await prisma.deliveryNoteLineSource.findMany({
+    where: { deliveryNoteLineId: { in: deliveryNote.lines.map((line) => line.id) } },
+  });
+  const sourceIdsByLineId = new Map<string, string[]>();
+
+  for (const source of lineSources) {
+    const ids = sourceIdsByLineId.get(source.deliveryNoteLineId) ?? [];
+
+    ids.push(source.sourceDeliveryNoteLineId);
+    sourceIdsByLineId.set(source.deliveryNoteLineId, ids);
+  }
 
   return saveDbDocumentDraft(
     "invoices",
@@ -613,7 +669,10 @@ export async function importDbDeliveryNoteToInvoiceDraft(
         description: line.description ?? undefined,
         itemId: line.itemId,
         quantity: number(line.quantity),
-        sourceDeliveryLineIds: [line.id],
+        sourceDeliveryLineIds:
+          sourceIdsByLineId.get(line.id)?.length
+            ? sourceIdsByLineId.get(line.id)
+            : [line.id],
         unitPriceMinor: line.unitPriceMinor,
         vatRateBps: line.vatRateBps,
       })),
@@ -1399,18 +1458,28 @@ async function finalizeMergedDeliveryApproval(
   actorUserId: string,
 ) {
   const mergedId = String(mergedHeader.id);
+  const mergeSources = await tx.deliveryNoteMergeSource.findMany({
+    select: { sourceDeliveryNoteId: true },
+    where: { mergedDeliveryNoteId: mergedId },
+  });
+  const sourceIds = mergeSources.map((source) => source.sourceDeliveryNoteId);
+
+  if (!sourceIds.length) {
+    throw new Error("B-Irsaliye kaynaklari bulunamadi");
+  }
+
   const sources = await tx.deliveryNote.findMany({
     where: {
+      id: { in: sourceIds },
       invoicedByInvoiceId: null,
       isEffective: true,
       mergeRole: DbDeliveryMergeRole.NORMAL,
       status: DbDocumentStatus.APPROVED,
-      supersededById: mergedId,
     },
   });
 
-  if (!sources.length) {
-    throw new Error("B-Irsaliye kaynaklari bulunamadi");
+  if (sources.length !== sourceIds.length) {
+    throw new Error("B-Irsaliye kaynaklari artik birlestirilebilir durumda degil");
   }
 
   for (const source of sources) {
@@ -1727,13 +1796,47 @@ function dbReceiptKind(value: unknown): DbReceiptKind {
 }
 
 async function assertDeliveryNoteCanVoid(tx: Tx, header: DataRecord) {
+  if (
+    String(header.merge_role ?? "NORMAL") === "MERGED_RESULT" &&
+    header.status === "APPROVED" &&
+    header.is_effective === true
+  ) {
+    throw new Error("B-Irsaliye iptal edilemez; Birlesimi Coz kullanilmalidir.");
+  }
+
   if (String(header.merge_role ?? "NORMAL") === "MERGED_SOURCE") {
-    throw new Error("I-Irsaliyeler iptal edilemez");
+    throw new Error("K-Irsaliye iptal edilemez");
   }
 
   if (await noteHasActiveInvoiceLink(tx, String(header.id))) {
     throw new Error("Faturaya bagli irsaliyeler iptal edilemez");
   }
+}
+
+async function assertSourcesNotInActiveMerge(tx: Tx, sourceIds: string[]) {
+  const blocked = await getSourceIdsInActiveMerge(tx, sourceIds);
+
+  if (blocked.size) {
+    throw new Error("Secilen irsaliye aktif bir B-Irsaliye taslagina veya onayli B-Irsaliyeye bagli");
+  }
+}
+
+async function getSourceIdsInActiveMerge(tx: DbClient, sourceIds: string[]) {
+  if (!sourceIds.length) {
+    return new Set<string>();
+  }
+
+  const rows = await tx.deliveryNoteMergeSource.findMany({
+    include: { mergedDeliveryNote: true },
+    where: {
+      sourceDeliveryNoteId: { in: sourceIds },
+      mergedDeliveryNote: {
+        status: { in: [DbDocumentStatus.DRAFT, DbDocumentStatus.APPROVED] },
+      },
+    },
+  });
+
+  return new Set(rows.map((row) => row.sourceDeliveryNoteId));
 }
 
 function validateMergeSources(
@@ -1788,6 +1891,7 @@ function buildMergedDeliveryLines(
     lines: Array<{
       currency: DbCurrency | string;
       description: string | null;
+      id: string;
       itemId: string;
       quantity: unknown;
       unitPriceMinor: number;
@@ -1802,6 +1906,7 @@ function buildMergedDeliveryLines(
       currency: string;
       descriptions: Set<string>;
       itemId: string;
+      sourceLines: Array<{ sourceDeliveryNoteLineId: string; signedQuantity: number }>;
       netQuantity: number;
       priceAmount: number;
       priceQuantity: number;
@@ -1823,6 +1928,7 @@ function buildMergedDeliveryLines(
           currency: currency(line.currency),
           descriptions: new Set<string>(),
           itemId: line.itemId,
+          sourceLines: [],
           netQuantity: 0,
           priceAmount: 0,
           priceQuantity: 0,
@@ -1830,6 +1936,10 @@ function buildMergedDeliveryLines(
         };
 
       current.netQuantity += signedQuantity;
+      current.sourceLines.push({
+        signedQuantity,
+        sourceDeliveryNoteLineId: line.id,
+      });
       current.priceAmount += Math.abs(signedQuantity) * line.unitPriceMinor;
       current.priceQuantity += Math.abs(signedQuantity);
       current.vatRateBps = line.vatRateBps;
@@ -1840,7 +1950,12 @@ function buildMergedDeliveryLines(
     }
   }
 
-  return Array.from(byItem.values())
+  const lineSources: Array<{
+    deliveryNoteLineId: string;
+    signedQuantity: number;
+    sourceDeliveryNoteLineId: string;
+  }> = [];
+  const lines = Array.from(byItem.values())
     .filter((group) => Math.abs(group.netQuantity) > 0.000001)
     .map((group) => {
       if (group.netQuantity < 0) {
@@ -1851,13 +1966,24 @@ function buildMergedDeliveryLines(
         group.priceQuantity > 0 ? roundMinor(group.priceAmount / group.priceQuantity) : 0;
       const netTotalMinor = roundMinor(group.netQuantity * unitPriceMinor);
       const vatTotalMinor = roundMinor((netTotalMinor * group.vatRateBps) / 10000);
+      const lineId = randomUUID();
+
+      for (const sourceLine of group.sourceLines) {
+        if (Math.abs(sourceLine.signedQuantity) > 0.000001) {
+          lineSources.push({
+            deliveryNoteLineId: lineId,
+            signedQuantity: sourceLine.signedQuantity,
+            sourceDeliveryNoteLineId: sourceLine.sourceDeliveryNoteLineId,
+          });
+        }
+      }
 
       return {
         currency: group.currency,
         delivery_note_id: mergedDeliveryNoteId,
         description: Array.from(group.descriptions).slice(0, 2).join(" / ") || null,
         gross_total_minor: netTotalMinor + vatTotalMinor,
-        id: randomUUID(),
+        id: lineId,
         item_id: group.itemId,
         line_total_minor: netTotalMinor + vatTotalMinor,
         net_total_minor: netTotalMinor,
@@ -1867,6 +1993,8 @@ function buildMergedDeliveryLines(
         vat_total_minor: vatTotalMinor,
       } satisfies DataRecord;
     });
+
+  return { lineSources, lines };
 }
 
 function signedQuantityForMerge(
@@ -1917,14 +2045,7 @@ function resolveInvoiceKindForDeliveryImport(
   requestedInvoiceKind: string | null,
   stockDirection: "IN" | "OUT",
 ): "SALES" | "PURCHASE" {
-  const invoiceKind =
-    accountKind === "CUSTOMER"
-      ? "SALES"
-      : accountKind === "SUPPLIER"
-        ? "PURCHASE"
-        : requestedInvoiceKind === "PURCHASE"
-          ? "PURCHASE"
-          : "SALES";
+  const invoiceKind = resolveInvoiceKindForAccount(accountKind, requestedInvoiceKind);
 
   if (invoiceKind === "SALES" && stockDirection !== "OUT") {
     throw new Error("Satis faturasi yalnizca OUT etkili irsaliyeyi aktarabilir");
@@ -1937,12 +2058,33 @@ function resolveInvoiceKindForDeliveryImport(
   return invoiceKind;
 }
 
+function resolveInvoiceKindForAccount(
+  accountKind: string | null | undefined,
+  requestedInvoiceKind: string | null,
+): "SALES" | "PURCHASE" {
+  if (accountKind === "CUSTOMER") {
+    return "SALES";
+  }
+
+  if (accountKind === "SUPPLIER") {
+    return "PURCHASE";
+  }
+
+  if (accountKind === "BOTH" && requestedInvoiceKind !== "SALES" && requestedInvoiceKind !== "PURCHASE") {
+    throw new Error("BOTH cari icin fatura turu secilmelidir");
+  }
+
+  return requestedInvoiceKind === "PURCHASE" ? "PURCHASE" : "SALES";
+}
+
 async function assertInvoiceDeliveryLinksCanApprove(
   tx: Tx,
   invoiceHeader: DataRecord,
   lines: DataRecord[],
   supersedesInvoiceId: string | null,
 ) {
+  await assertLinkedInvoiceLinesPreserved(tx, lines, supersedesInvoiceId);
+
   const deliveryNoteIds = await resolveDeliveryNoteIdsFromInvoiceLines(tx, lines);
 
   if (!deliveryNoteIds.length) {
@@ -1997,9 +2139,119 @@ async function assertInvoiceDeliveryLinksCanApprove(
   }
 }
 
+async function assertLinkedInvoiceLinesPreserved(
+  tx: Tx,
+  lines: DataRecord[],
+  supersedesInvoiceId: string | null,
+) {
+  const linkedLines = lines.filter(hasDeliveryLink);
+  const primaryLineIds = linkedLines
+    .map((line) => String(line.delivery_note_line_id ?? "").trim())
+    .filter((lineId) => lineId.length > 0);
+  const sourceLineIds = Array.from(
+    new Set(linkedLines.flatMap((line) => getStoredSourceDeliveryLineIds(line))),
+  );
+  const allLineIds = Array.from(new Set([...primaryLineIds, ...sourceLineIds]));
+  const deliveryLines = allLineIds.length
+    ? await tx.deliveryNoteLine.findMany({
+        where: { id: { in: allLineIds } },
+      })
+    : [];
+  const deliveryLineById = new Map(deliveryLines.map((line) => [line.id, line]));
+
+  for (const line of linkedLines) {
+    const primaryLineId = String(line.delivery_note_line_id ?? "").trim();
+    const sourceIds = getStoredSourceDeliveryLineIds(line);
+    const comparisonLine =
+      (primaryLineId ? deliveryLineById.get(primaryLineId) : null) ??
+      (sourceIds.length === 1 ? deliveryLineById.get(sourceIds[0]) : null);
+
+    if (!comparisonLine) {
+      throw new Error("Fatura kaynak irsaliye satiri bulunamadi");
+    }
+
+    if (String(line.item_id) !== comparisonLine.itemId) {
+      throw new Error("Irsaliyeden aktarilan fatura satirinda malzeme degistirilemez");
+    }
+
+    if (!sameQuantity(number(line.quantity), number(comparisonLine.quantity))) {
+      throw new Error("Irsaliyeden aktarilan fatura satirinda miktar degistirilemez");
+    }
+  }
+
+  if (!supersedesInvoiceId) {
+    return;
+  }
+
+  const previousLinkedLines = (await tx.invoiceLine.findMany({
+    where: { invoiceId: supersedesInvoiceId },
+  }))
+    .map(invoiceLineRecord)
+    .filter(hasDeliveryLink);
+
+  for (const previousLine of previousLinkedLines) {
+    const matchingLine = linkedLines.find(
+      (line) =>
+        String(line.delivery_note_line_id ?? "") ===
+          String(previousLine.delivery_note_line_id ?? "") &&
+        sameStringSet(
+          getStoredSourceDeliveryLineIds(line),
+          getStoredSourceDeliveryLineIds(previousLine),
+        ),
+    );
+
+    if (!matchingLine) {
+      throw new Error("Irsaliyeden aktarilan fatura satiri silinemez");
+    }
+
+    if (String(matchingLine.item_id) !== String(previousLine.item_id)) {
+      throw new Error("Irsaliyeden aktarilan fatura satirinda malzeme degistirilemez");
+    }
+
+    if (!sameQuantity(number(matchingLine.quantity), number(previousLine.quantity))) {
+      throw new Error("Irsaliyeden aktarilan fatura satirinda miktar degistirilemez");
+    }
+  }
+}
+
+function assertExistingLinkedInvoiceLinesPreserved(
+  previousLines: DataRecord[],
+  nextLines: DataRecord[],
+) {
+  for (const previousLine of previousLines.filter(hasDeliveryLink)) {
+    const matchingLine = nextLines.find(
+      (line) =>
+        String(line.delivery_note_line_id ?? "") ===
+          String(previousLine.delivery_note_line_id ?? "") &&
+        sameStringSet(
+          getStoredSourceDeliveryLineIds(line),
+          getStoredSourceDeliveryLineIds(previousLine),
+        ),
+    );
+
+    if (!matchingLine) {
+      throw new Error("Irsaliyeden aktarilan fatura satiri silinemez");
+    }
+
+    if (String(matchingLine.item_id) !== String(previousLine.item_id)) {
+      throw new Error("Irsaliyeden aktarilan fatura satirinda malzeme degistirilemez");
+    }
+
+    if (!sameQuantity(number(matchingLine.quantity), number(previousLine.quantity))) {
+      throw new Error("Irsaliyeden aktarilan fatura satirinda miktar degistirilemez");
+    }
+  }
+}
+
 async function resolveDeliveryNoteIdsFromInvoiceLines(tx: Tx, lines: DataRecord[]) {
   const sourceDeliveryLineIds = Array.from(
-    new Set(lines.flatMap((line) => getStoredSourceDeliveryLineIds(line))),
+    new Set(
+      lines.flatMap((line) => {
+        const primaryLineId = String(line.delivery_note_line_id ?? "").trim();
+
+        return primaryLineId ? [primaryLineId] : getStoredSourceDeliveryLineIds(line);
+      }),
+    ),
   );
 
   if (!sourceDeliveryLineIds.length) {
@@ -2018,6 +2270,20 @@ async function noteHasActiveInvoiceLink(tx: Tx, deliveryNoteId: string) {
   const invoicedDeliveryNoteIds = await getInvoicedDeliveryNoteIds(tx);
 
   return invoicedDeliveryNoteIds.has(deliveryNoteId);
+}
+
+function sameQuantity(left: number, right: number) {
+  return Math.abs(left - right) <= 0.000001;
+}
+
+function sameStringSet(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const rightSet = new Set(right);
+
+  return left.every((value) => rightSet.has(value));
 }
 
 async function getInvoicedDeliveryNoteIds(tx: Tx) {
@@ -2375,12 +2641,19 @@ function getInvoiceSourceDeliveryLineIds(
     "deliveryNoteLineId" | "sourceDeliveryLineIds"
   >,
 ) {
+  const explicitSourceIds = Array.isArray(line.sourceDeliveryLineIds)
+    ? line.sourceDeliveryLineIds
+        .map((value) => String(value ?? "").trim())
+        .filter((value) => value.length > 0)
+    : [];
+
+  if (explicitSourceIds.length) {
+    return Array.from(new Set(explicitSourceIds));
+  }
+
   return Array.from(
     new Set(
-      [
-        line.deliveryNoteLineId ?? null,
-        ...(Array.isArray(line.sourceDeliveryLineIds) ? line.sourceDeliveryLineIds : []),
-      ]
+      [line.deliveryNoteLineId ?? null]
         .map((value) => String(value ?? "").trim())
         .filter((value) => value.length > 0),
     ),

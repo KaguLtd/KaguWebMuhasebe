@@ -387,6 +387,8 @@ model DeliveryNote {
   supersedingNotes DeliveryNote[]     @relation("DeliveryNoteSupersedes")
   supersededNotes  DeliveryNote[]     @relation("DeliveryNoteSupersededBy")
   lines            DeliveryNoteLine[]
+  mergeSources     DeliveryNoteMergeSource[] @relation("MergedDeliveryNoteSources")
+  usedAsMergeSource DeliveryNoteMergeSource[] @relation("SourceDeliveryNoteMerges")
 
   @@index([accountId])
   @@index([projectId])
@@ -416,10 +418,39 @@ model DeliveryNoteLine {
   deliveryNote    DeliveryNote  @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
   item            Item          @relation(fields: [itemId], references: [id], onDelete: Restrict)
   invoiceLines    InvoiceLine[]
+  mergedLineSources DeliveryNoteLineSource[] @relation("MergedDeliveryNoteLineSources")
+  usedAsLineSource  DeliveryNoteLineSource[] @relation("SourceDeliveryNoteLineSources")
 
   @@index([deliveryNoteId])
   @@index([itemId])
   @@map("delivery_note_lines")
+}
+
+model DeliveryNoteMergeSource {
+  id                   String       @id @default(uuid())
+  mergedDeliveryNoteId String       @map("merged_delivery_note_id")
+  sourceDeliveryNoteId String       @map("source_delivery_note_id")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  mergedDeliveryNote   DeliveryNote @relation("MergedDeliveryNoteSources", fields: [mergedDeliveryNoteId], references: [id], onDelete: Cascade)
+  sourceDeliveryNote   DeliveryNote @relation("SourceDeliveryNoteMerges", fields: [sourceDeliveryNoteId], references: [id], onDelete: Restrict)
+
+  @@unique([mergedDeliveryNoteId, sourceDeliveryNoteId])
+  @@index([sourceDeliveryNoteId])
+  @@map("delivery_note_merge_sources")
+}
+
+model DeliveryNoteLineSource {
+  id                       String           @id @default(uuid())
+  deliveryNoteLineId       String           @map("delivery_note_line_id")
+  sourceDeliveryNoteLineId String           @map("source_delivery_note_line_id")
+  signedQuantity           Decimal          @map("signed_quantity") @db.Decimal(18, 4)
+  createdAt                DateTime         @default(now()) @map("created_at")
+  deliveryNoteLine         DeliveryNoteLine @relation("MergedDeliveryNoteLineSources", fields: [deliveryNoteLineId], references: [id], onDelete: Cascade)
+  sourceDeliveryNoteLine   DeliveryNoteLine @relation("SourceDeliveryNoteLineSources", fields: [sourceDeliveryNoteLineId], references: [id], onDelete: Restrict)
+
+  @@unique([deliveryNoteLineId, sourceDeliveryNoteLineId])
+  @@index([sourceDeliveryNoteLineId])
+  @@map("delivery_note_line_sources")
 }
 
 model Invoice {

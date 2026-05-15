@@ -108,12 +108,33 @@ test("delivery merge and invoicing workflows keep separate semantic fields", asy
   assert.match(schemaSource, /invoicedByInvoiceId\s+String\?/);
   assert.match(schemaSource, /invoiced_by_invoice_id/);
   assert.match(schemaSource, /@@index\(\[invoicedByInvoiceId\]\)/);
+  assert.match(schemaSource, /model DeliveryNoteMergeSource/);
+  assert.match(schemaSource, /model DeliveryNoteLineSource/);
+  assert.match(schemaSource, /signedQuantity\s+Decimal/);
   assert.match(repositorySource, /createDbMergedDeliveryNoteDraft/);
   assert.match(repositorySource, /unmergeDbDeliveryNote/);
   assert.match(repositorySource, /finalizeInvoiceDeliveryTransfer/);
   assert.match(repositorySource, /restoreDeliveryNotesFromVoidedInvoice/);
+  assert.match(repositorySource, /B-Irsaliye iptal edilemez; Birlesimi Coz kullanilmalidir\./);
+  assert.match(repositorySource, /assertLinkedInvoiceLinesPreserved/);
   assert.match(repositorySource, /MERGED_SOURCE[\s\S]+faturaya aktarilamaz/);
   assert.match(repositorySource, /Negatif net miktar reddedildi/);
+});
+
+test("warehouse document movements and invoice candidates use go-live filters", async () => {
+  const [repositorySource, reportSource, workspaceSource] = await Promise.all([
+    readFile(new URL("../lib/kagu/document-repository.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/kagu/report-repository.ts", import.meta.url), "utf8"),
+    readFile(new URL("../components/kagu/DocumentWorkspace.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(repositorySource, /resolveInvoiceKindForAccount/);
+  assert.match(repositorySource, /stock_direction === \(invoiceKind === "SALES" \? "OUT" : "IN"\)/);
+  assert.match(repositorySource, /getSourceIdsInActiveMerge/);
+  assert.match(reportSource, /where: \{ isEffective: true, warehouseId \}/);
+  assert.match(reportSource, /sourceDeliveryNoteNos/);
+  assert.match(workspaceSource, /canShowVoidAction/);
+  assert.match(workspaceSource, /isLinkedInvoiceLine/);
 });
 
 test("approved delivery note revision draft save should not reuse deliveryNoteLine ids", async () => {

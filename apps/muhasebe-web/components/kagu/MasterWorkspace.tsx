@@ -652,6 +652,11 @@ function MasterDetailPane({
             },
             { dataIndex: "status", key: "status", title: "Durum" },
             { dataIndex: "sourceRole", key: "sourceRole", title: "Rol" },
+            {
+              dataIndex: "sourceDeliveryNoteNos",
+              key: "sourceDeliveryNoteNos",
+              title: "Kaynak Irsaliyeler",
+            },
           ]}
           dataSource={(report as WarehouseDocumentMovementReport).rows}
           locale={{ emptyText: <Empty description="Evrak hareketi yok" /> }}

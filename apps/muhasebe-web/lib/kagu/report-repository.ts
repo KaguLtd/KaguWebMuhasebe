@@ -229,7 +229,7 @@ export async function getDbWarehouseDocumentMovementReport(
   const movements = await prisma.stockMovement.findMany({
     include: { item: true, project: true },
     orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
-    where: { warehouseId },
+    where: { isEffective: true, warehouseId },
   });
   const docKeys = movements.map((movement) => ({ docId: movement.docId, docType: movement.docType }));
   const deliveryIds = docKeys
@@ -238,7 +238,7 @@ export async function getDbWarehouseDocumentMovementReport(
   const invoiceIds = docKeys
     .filter((key) => key.docType.includes("INVOICE"))
     .map((key) => key.docId);
-  const [deliveryNotes, invoices] = await Promise.all([
+  const [deliveryNotes, invoices, mergeSources] = await Promise.all([
     prisma.deliveryNote.findMany({
       include: { account: true },
       where: { id: { in: deliveryIds } },
@@ -247,9 +247,21 @@ export async function getDbWarehouseDocumentMovementReport(
       include: { account: true },
       where: { id: { in: invoiceIds } },
     }),
+    prisma.deliveryNoteMergeSource.findMany({
+      include: { sourceDeliveryNote: true },
+      where: { mergedDeliveryNoteId: { in: deliveryIds } },
+    }),
   ]);
   const deliveryById = new Map(deliveryNotes.map((note) => [note.id, note]));
   const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+  const sourceNosByMergedId = new Map<string, string[]>();
+
+  for (const source of mergeSources) {
+    const sourceNos = sourceNosByMergedId.get(source.mergedDeliveryNoteId) ?? [];
+
+    sourceNos.push(source.sourceDeliveryNote.docNo);
+    sourceNosByMergedId.set(source.mergedDeliveryNoteId, sourceNos);
+  }
 
   const rows: WarehouseDocumentMovementRow[] = movements.map((movement) => {
     const delivery = deliveryById.get(movement.docId);
@@ -277,6 +289,7 @@ export async function getDbWarehouseDocumentMovementReport(
       qtyIn: number(movement.qtyIn),
       qtyOut: number(movement.qtyOut),
       replacedByDocId: movement.replacedByDocId ?? null,
+      sourceDeliveryNoteNos: sourceNosByMergedId.get(movement.docId)?.join(", ") ?? null,
       sourceRole: delivery
         ? delivery.invoicedByInvoiceId
           ? "F-Irsaliye"

@@ -436,18 +436,20 @@ export function DocumentWorkspace({
                   >
                     Onayla
                   </Button>
-                  <Button
-                    danger
-                    disabled={record.status === "VOID"}
-                    onClick={() => {
-                      setVoidTarget(record);
-                      setVoidReason("");
-                    }}
-                    size="small"
-                    type="link"
-                  >
-                    Iptal
-                  </Button>
+                  {canShowVoidAction(module.entity, record) ? (
+                    <Button
+                      danger
+                      disabled={record.status === "VOID"}
+                      onClick={() => {
+                        setVoidTarget(record);
+                        setVoidReason("");
+                      }}
+                      size="small"
+                      type="link"
+                    >
+                      Iptal
+                    </Button>
+                  ) : null}
                   {module.entity === "deliveryNotes" &&
                   record.merge_role === "MERGED_RESULT" &&
                   record.status === "APPROVED" &&
@@ -808,13 +810,23 @@ function InvoiceDeliveryImportDrawer({
       return;
     }
 
-    fetchInvoiceDeliveryNoteCandidates({ accountId, projectId })
+    Promise.resolve()
+      .then(() => {
+        setLoading(true);
+        setSelectedId(null);
+
+        return fetchInvoiceDeliveryNoteCandidates({
+          accountId,
+          invoiceKind: lockedInvoiceKind ?? invoiceKind,
+          projectId,
+        });
+      })
       .then(setCandidates)
       .catch((error: unknown) =>
         message.error(error instanceof Error ? error.message : "Irsaliyeler alinamadi"),
       )
       .finally(() => setLoading(false));
-  }, [accountId, message, open, projectId]);
+  }, [accountId, invoiceKind, lockedInvoiceKind, message, open, projectId]);
 
   async function submit() {
     if (!selectedId) {
@@ -1259,6 +1271,16 @@ function EditableLineTable({
   selectedAccountCurrency?: Currency;
 }) {
   const form = Form.useFormInstance<DocumentFormValues>();
+  const watchedLines = (Form.useWatch("lines", form) ?? []) as Array<Record<string, unknown>>;
+
+  function isLinkedInvoiceLine(rowIndex: number) {
+    const line = watchedLines[rowIndex] ?? {};
+
+    return Boolean(
+      typeof line.deliveryNoteLineId === "string" ||
+        (Array.isArray(line.sourceDeliveryLineIds) && line.sourceDeliveryLineIds.length > 0),
+    );
+  }
 
   function setLineField(rowIndex: number, fieldName: string, value: unknown) {
     const lines = [...((form.getFieldValue("lines") ?? []) as Array<Record<string, unknown>>)];
@@ -1280,6 +1302,13 @@ function EditableLineTable({
               <Form.Item hidden name={[field.name, "id"]}>
                 <Input />
               </Form.Item>
+              {moduleEntity === "invoices" ? (
+                <>
+                  <Form.Item hidden name={[field.name, "deliveryNoteLineId"]}>
+                    <Input />
+                  </Form.Item>
+                </>
+              ) : null}
             </>
           ),
           title: "#",
@@ -1287,7 +1316,12 @@ function EditableLineTable({
         },
         ...lineFields.map((lineField) => ({
           key: lineField.name,
-          render: (_value: unknown, field: FormListField) => (
+          render: (_value: unknown, field: FormListField) => {
+            const linkedLine = moduleEntity === "invoices" && isLinkedInvoiceLine(field.name);
+            const linkedReadonlyField =
+              linkedLine && (lineField.name === "itemId" || lineField.name === "quantity");
+
+            return (
             <Form.Item
               name={[field.name, lineField.name]}
               rules={lineFieldRules(lineField, {
@@ -1299,6 +1333,7 @@ function EditableLineTable({
               {renderLineControl(lineField, lookups, {
                 invoiceType,
                 moduleEntity,
+                disabled: linkedReadonlyField,
                 onItemChange: (itemId) => {
                   const item = findLookup(lookups.items, itemId);
                   const vatRate = invoiceType === "STAR"
@@ -1310,7 +1345,8 @@ function EditableLineTable({
                 selectedAccountCurrency,
               })}
             </Form.Item>
-          ),
+            );
+          },
           title: lineField.label,
           width: lineColumnWidth(lineField),
         })),
@@ -1318,7 +1354,13 @@ function EditableLineTable({
           fixed: "right",
           key: "actions",
           render: (_value: unknown, field: FormListField) => (
-            <Button danger onClick={() => removeLine(field.name)} size="small" type="link">
+            <Button
+              danger
+              disabled={moduleEntity === "invoices" && isLinkedInvoiceLine(field.name)}
+              onClick={() => removeLine(field.name)}
+              size="small"
+              type="link"
+            >
               Sil
             </Button>
           ),
@@ -1344,6 +1386,7 @@ function renderLineControl(
   field: FieldConfig,
   lookups: LookupMap,
   context: {
+    disabled?: boolean;
     invoiceType?: string;
     moduleEntity: DocumentEntity;
     onItemChange: (itemId: string | undefined) => void;
@@ -1354,7 +1397,9 @@ function renderLineControl(
     return (
       <Select
         allowClear
-        disabled={context.moduleEntity === "invoices" && context.invoiceType === "STAR"}
+        disabled={
+          context.disabled || (context.moduleEntity === "invoices" && context.invoiceType === "STAR")
+        }
         options={(lookups.vatRates ?? [])
           .filter((item) => item.isActive !== false)
           .map((item) => ({
@@ -1375,7 +1420,9 @@ function renderLineControl(
     return (
       <Select
         allowClear={!field.required}
-        disabled={field.name === "currency" && Boolean(context.selectedAccountCurrency)}
+        disabled={
+          context.disabled || (field.name === "currency" && Boolean(context.selectedAccountCurrency))
+        }
         onChange={
           field.name === "itemId"
             ? (value) => context.onItemChange(value as string | undefined)
@@ -1389,12 +1436,13 @@ function renderLineControl(
   }
 
   if (field.type === "text") {
-    return <Input />;
+    return <Input disabled={context.disabled} />;
   }
 
   return (
     <InputNumber
       decimalSeparator=","
+      disabled={context.disabled}
       min={field.min}
       precision={field.moneyMinor ? 2 : undefined}
       step={field.step ?? (field.moneyMinor ? 0.01 : 1)}
@@ -1482,6 +1530,26 @@ function renderDocumentCell(
   }
 
   return value ? String(value) : "-";
+}
+
+function canShowVoidAction(entity: DocumentEntity, record: DataRecord) {
+  if (record.status === "VOID") {
+    return true;
+  }
+
+  if (entity !== "deliveryNotes") {
+    return true;
+  }
+
+  if (record.merge_role === "MERGED_SOURCE" || record.invoiced_by_invoice_id) {
+    return false;
+  }
+
+  return !(
+    record.merge_role === "MERGED_RESULT" &&
+    record.status === "APPROVED" &&
+    record.is_effective !== false
+  );
 }
 
 function renderDeliveryRoleTag(record: DataRecord, value: string) {

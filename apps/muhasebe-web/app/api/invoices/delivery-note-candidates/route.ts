@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       items: await listDbInvoiceDeliveryNoteCandidates({
         accountId: params.get("accountId") ?? undefined,
+        invoiceKind: params.get("invoiceKind") ?? undefined,
         projectId: params.get("projectId") ?? undefined,
         warehouseId: params.get("warehouseId") ?? undefined,
       }),
