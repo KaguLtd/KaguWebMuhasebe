@@ -172,11 +172,23 @@ export async function saveDbDocumentDraft(
         throw new Error("Only effective approved documents can be revised");
       }
 
+      if (entity === "deliveryNotes") {
+        await assertDeliveryNoteCanRevise(tx, superseded);
+      }
+
       if (!payload.editReason?.trim()) {
         throw new Error("Revising an approved document requires an edit reason");
       }
 
       await assertPeriodLockAllows(tx, String(superseded.doc_date), "Bu belge kilitli donemde");
+    }
+
+    if (
+      entity === "deliveryNotes" &&
+      existing?.status === "DRAFT" &&
+      existing.merge_role === "MERGED_RESULT"
+    ) {
+      throw new Error("B-Irsaliye taslagi elle degistirilemez");
     }
 
     const status = existing?.status ?? "DRAFT";
@@ -272,6 +284,10 @@ export async function approveDbDocument(
     if (superseded) {
       if (superseded.status !== "APPROVED" || superseded.is_effective !== true) {
         throw new Error("Superseded document is no longer active");
+      }
+
+      if (entity === "deliveryNotes") {
+        await assertDeliveryNoteCanRevise(tx, superseded);
       }
 
       await assertPeriodLockAllows(
@@ -2008,7 +2024,7 @@ function signedQuantityForMerge(
       return quantity;
     }
 
-    if (direction === "IN" && isReturn) {
+    if (direction === "OUT" && isReturn) {
       return -quantity;
     }
   }
@@ -2018,12 +2034,26 @@ function signedQuantityForMerge(
       return quantity;
     }
 
-    if (direction === "OUT" && isReturn) {
+    if (direction === "IN" && isReturn) {
       return -quantity;
     }
   }
 
   throw new Error("Secilen irsaliye net akis tipiyle uyumlu degil");
+}
+
+async function assertDeliveryNoteCanRevise(tx: Tx, header: DataRecord) {
+  if (String(header.merge_role ?? "NORMAL") !== "NORMAL") {
+    throw new Error("Birlesmis veya birlesim kaynagi irsaliyeler revize edilemez");
+  }
+
+  if ((await getSourceIdsInActiveMerge(tx, [String(header.id)])).has(String(header.id))) {
+    throw new Error("Aktif B-Irsaliye baglantisi olan irsaliyeler revize edilemez");
+  }
+
+  if (header.invoiced_by_invoice_id || (await noteHasActiveInvoiceLink(tx, String(header.id)))) {
+    throw new Error("Faturaya bagli irsaliyeler revize edilemez");
+  }
 }
 
 function assertDeliveryNoteCanImport(header: DataRecord) {

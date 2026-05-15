@@ -116,9 +116,14 @@ test("delivery merge and invoicing workflows keep separate semantic fields", asy
   assert.match(repositorySource, /finalizeInvoiceDeliveryTransfer/);
   assert.match(repositorySource, /restoreDeliveryNotesFromVoidedInvoice/);
   assert.match(repositorySource, /B-Irsaliye iptal edilemez; Birlesimi Coz kullanilmalidir\./);
+  assert.match(repositorySource, /assertDeliveryNoteCanRevise/);
+  assert.match(repositorySource, /Birlesmis veya birlesim kaynagi irsaliyeler revize edilemez/);
+  assert.match(repositorySource, /Faturaya bagli irsaliyeler revize edilemez/);
   assert.match(repositorySource, /assertLinkedInvoiceLinesPreserved/);
+  assert.match(repositorySource, /B-Irsaliye taslagi elle degistirilemez/);
   assert.match(repositorySource, /MERGED_SOURCE[\s\S]+faturaya aktarilamaz/);
   assert.match(repositorySource, /Negatif net miktar reddedildi/);
+  assert.match(repositorySource, /direction === "OUT" && isReturn/);
 });
 
 test("warehouse document movements and invoice candidates use go-live filters", async () => {
@@ -134,7 +139,14 @@ test("warehouse document movements and invoice candidates use go-live filters", 
   assert.match(reportSource, /where: \{ isEffective: true, warehouseId \}/);
   assert.match(reportSource, /sourceDeliveryNoteNos/);
   assert.match(workspaceSource, /canShowVoidAction/);
+  assert.match(workspaceSource, /canReviseDeliveryNote/);
+  assert.match(workspaceSource, /saveInFlightRef/);
   assert.match(workspaceSource, /isLinkedInvoiceLine/);
+  assert.match(workspaceSource, /isLockedMergeDraft/);
+  assert.match(workspaceSource, /tableLocked/);
+  assert.match(workspaceSource, /lineField\.name === "itemId" \|\| lineField\.name === "quantity"/);
+  assert.match(workspaceSource, /values\.sourceDeliveryLineIds = \[\]/);
+  assert.match(workspaceSource, /next\.sourceDeliveryLineIds = deliveryNoteLineId/);
 });
 
 test("approved delivery note revision draft save should not reuse deliveryNoteLine ids", async () => {
@@ -203,7 +215,7 @@ async function saveRevisionDraftWithCopiedLineId(entity, saveDbDocumentDraft) {
           id: sourceId,
           isEffective: true,
           isReturn: false,
-          mergeRole: "NONE",
+          mergeRole: "NORMAL",
           projectId: null,
           status: "APPROVED",
           supersededAt: null,
@@ -256,6 +268,7 @@ async function saveRevisionDraftWithCopiedLineId(entity, saveDbDocumentDraft) {
       findMany: async () => [],
     },
     deliveryNote: {
+      findMany: async () => [],
       findUnique: async ({ where }) => {
         if (where.id === sourceId) {
           return sourceHeader;
@@ -279,6 +292,9 @@ async function saveRevisionDraftWithCopiedLineId(entity, saveDbDocumentDraft) {
       },
       deleteMany: async () => undefined,
       findMany: async () => createdLines,
+    },
+    deliveryNoteMergeSource: {
+      findMany: async () => [],
     },
     documentCounter: {
       upsert: async () => ({ nextSeq: 2 }),

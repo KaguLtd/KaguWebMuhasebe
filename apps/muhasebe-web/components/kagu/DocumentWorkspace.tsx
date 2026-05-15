@@ -21,7 +21,7 @@ import {
 } from "antd";
 import type { TablePaginationConfig } from "antd";
 import dayjs from "dayjs";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldInput } from "./FieldInput";
 import type { DocumentModuleConfig, FieldConfig } from "@/lib/kagu/config";
@@ -92,6 +92,8 @@ export function DocumentWorkspace({
   const [voidReason, setVoidReason] = useState("");
   const [mergeDrawerOpen, setMergeDrawerOpen] = useState(false);
   const [invoiceImportOpen, setInvoiceImportOpen] = useState(false);
+  const saveInFlightRef = useRef(false);
+  const voidInFlightRef = useRef(false);
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20 });
   const [filters, setFilters] = useState<ListQuery>({});
   const [total, setTotal] = useState(0);
@@ -140,8 +142,19 @@ export function DocumentWorkspace({
       selectedToAccount?.currency &&
       selectedFromAccount.currency !== selectedToAccount.currency,
   );
-  const isRevisionMode = editing?.status === "APPROVED";
-  const isHistoryView = editing?.status === "VOID" || editing?.status === "SUPERSEDED";
+  const isRevisionMode =
+    editing?.status === "APPROVED" &&
+    (module.entity !== "deliveryNotes" || canReviseDeliveryNote(editing));
+  const isHistoryView =
+    editing?.status === "VOID" ||
+    editing?.status === "SUPERSEDED" ||
+    (editing?.status === "APPROVED" &&
+      module.entity === "deliveryNotes" &&
+      !canReviseDeliveryNote(editing));
+  const isLockedMergeDraft =
+    module.entity === "deliveryNotes" &&
+    editing?.status === "DRAFT" &&
+    editing.merge_role === "MERGED_RESULT";
   const lockedInvoiceKind =
     module.entity === "invoices" && selectedAccount?.accountKind === "CUSTOMER"
       ? "SALES"
@@ -283,6 +296,11 @@ export function DocumentWorkspace({
   }
 
   async function handleSaveDraft() {
+    if (saveInFlightRef.current) {
+      return;
+    }
+
+    saveInFlightRef.current = true;
     setSaving(true);
 
     try {
@@ -304,6 +322,7 @@ export function DocumentWorkspace({
         message.error(error.message);
       }
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -323,6 +342,11 @@ export function DocumentWorkspace({
   }
 
   async function voidRow(id: string, reason: string) {
+    if (voidInFlightRef.current) {
+      return;
+    }
+
+    voidInFlightRef.current = true;
     setLoading(true);
 
     try {
@@ -335,6 +359,8 @@ export function DocumentWorkspace({
     } catch (error) {
       message.error(error instanceof Error ? error.message : "Iptal basarisiz");
       setLoading(false);
+    } finally {
+      voidInFlightRef.current = false;
     }
   }
 
@@ -493,7 +519,7 @@ export function DocumentWorkspace({
         size="min(1080px, 98vw)"
         title={editing ? `${module.title} Taslak` : `${module.title} Yeni Taslak`}
       >
-        <Form disabled={isHistoryView} form={form} layout="vertical">
+        <Form disabled={isHistoryView || isLockedMergeDraft} form={form} layout="vertical">
           {isRevisionMode ? (
             <Alert
               description="Onayli belge dogrudan degistirilmez. Kayit, eski belgeyi etkisiz birakarak yeni bir revizyon taslagi olusturur."
@@ -501,6 +527,24 @@ export function DocumentWorkspace({
               style={{ marginBottom: 16 }}
               title="Revizyon modundasiniz"
               type="warning"
+            />
+          ) : null}
+          {isHistoryView && editing?.status === "APPROVED" ? (
+            <Alert
+              description="Fatura edilmis, birlesmis veya birlesim kaynagi irsaliyeler dogrudan degistirilemez ve revize edilemez."
+              showIcon
+              style={{ marginBottom: 16 }}
+              title="Salt okunur irsaliye"
+              type="info"
+            />
+          ) : null}
+          {isLockedMergeDraft ? (
+            <Alert
+              description="B-Irsaliye taslagi kaynak irsaliyelerden hesaplanir. Satir ve baslik degerleri elle degistirilemez; uygun degilse taslak iptal edilip birlesim yeniden olusturulmalidir."
+              showIcon
+              style={{ marginBottom: 16 }}
+              title="Kilitli B-Irsaliye taslagi"
+              type="info"
             />
           ) : null}
           <Typography.Text className="kagu-section-kicker">
@@ -551,6 +595,7 @@ export function DocumentWorkspace({
                     moduleEntity={module.entity}
                     removeLine={remove}
                     selectedAccountCurrency={selectedAccount?.currency}
+                    tableLocked={isLockedMergeDraft}
                   />
                 )}
               </Form.List>
@@ -571,8 +616,8 @@ export function DocumentWorkspace({
         </Form>
         <Space className="kagu-drawer-actions">
           <Button onClick={() => setDrawerOpen(false)}>Vazgec</Button>
-          {!isHistoryView ? (
-            <Button loading={saving} onClick={handleSaveDraft} type="primary">
+          {!isHistoryView && !isLockedMergeDraft ? (
+            <Button disabled={saving} loading={saving} onClick={handleSaveDraft} type="primary">
               {isRevisionMode ? "Revizyon Taslagi Kaydet" : "Taslak Kaydet"}
             </Button>
           ) : null}
@@ -580,7 +625,8 @@ export function DocumentWorkspace({
         <DocumentPostingDetail detail={detail} invoiceMetrics={invoiceMetrics} />
       </Drawer>
       <Modal
-        okButtonProps={{ danger: true, disabled: !voidReason.trim() }}
+        confirmLoading={loading}
+        okButtonProps={{ danger: true, disabled: loading || !voidReason.trim() }}
         okText="Iptal Et"
         onCancel={() => setVoidTarget(null)}
         onOk={() => {
@@ -655,6 +701,7 @@ function DeliveryMergeDrawer({
   const [candidates, setCandidates] = useState<DeliveryNoteCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const submitInFlightRef = useRef(false);
   const [flow, setFlow] = useState<DeliveryMergeFlow>("SALES_OUT");
   const [filters, setFilters] = useState<ListQuery>({});
 
@@ -675,6 +722,11 @@ function DeliveryMergeDrawer({
   const preview = buildMergePreview(selectedRows, flow, lookups);
 
   async function submit() {
+    if (submitInFlightRef.current) {
+      return;
+    }
+
+    submitInFlightRef.current = true;
     setLoading(true);
     try {
       await createMergedDeliveryNoteDraft(selectedIds, flow);
@@ -684,6 +736,7 @@ function DeliveryMergeDrawer({
     } catch (error) {
       message.error(error instanceof Error ? error.message : "Birlesim basarisiz");
     } finally {
+      submitInFlightRef.current = false;
       setLoading(false);
     }
   }
@@ -772,7 +825,7 @@ function DeliveryMergeDrawer({
         />
         <Space className="kagu-drawer-actions">
           <Button onClick={onClose}>Vazgec</Button>
-          <Button disabled={selectedIds.length < 2} loading={loading} onClick={submit} type="primary">
+          <Button disabled={loading || selectedIds.length < 2} loading={loading} onClick={submit} type="primary">
             B-Irsaliye Taslagi Olustur
           </Button>
         </Space>
@@ -804,6 +857,7 @@ function InvoiceDeliveryImportDrawer({
   const [candidates, setCandidates] = useState<DeliveryNoteCandidate[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const submitInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!open || !accountId) {
@@ -833,6 +887,11 @@ function InvoiceDeliveryImportDrawer({
       return;
     }
 
+    if (submitInFlightRef.current) {
+      return;
+    }
+
+    submitInFlightRef.current = true;
     setLoading(true);
     try {
       const values = form.getFieldsValue(true);
@@ -844,6 +903,7 @@ function InvoiceDeliveryImportDrawer({
     } catch (error) {
       message.error(error instanceof Error ? error.message : "Irsaliye aktarilamadi");
     } finally {
+      submitInFlightRef.current = false;
       setLoading(false);
     }
   }
@@ -876,7 +936,7 @@ function InvoiceDeliveryImportDrawer({
       />
       <Space className="kagu-drawer-actions">
         <Button onClick={onClose}>Vazgec</Button>
-        <Button disabled={!selectedId} loading={loading} onClick={submit} type="primary">
+        <Button disabled={loading || !selectedId} loading={loading} onClick={submit} type="primary">
           Aktar
         </Button>
       </Space>
@@ -1251,6 +1311,10 @@ type FormListField = {
   name: number;
 };
 
+function HiddenFormValue() {
+  return null;
+}
+
 function EditableLineTable({
   addLine,
   fields,
@@ -1260,6 +1324,7 @@ function EditableLineTable({
   moduleEntity,
   removeLine,
   selectedAccountCurrency,
+  tableLocked = false,
 }: {
   addLine: () => void;
   fields: FormListField[];
@@ -1269,6 +1334,7 @@ function EditableLineTable({
   moduleEntity: DocumentEntity;
   removeLine: (index: number | number[]) => void;
   selectedAccountCurrency?: Currency;
+  tableLocked?: boolean;
 }) {
   const form = Form.useFormInstance<DocumentFormValues>();
   const watchedLines = (Form.useWatch("lines", form) ?? []) as Array<Record<string, unknown>>;
@@ -1277,7 +1343,7 @@ function EditableLineTable({
     const line = watchedLines[rowIndex] ?? {};
 
     return Boolean(
-      typeof line.deliveryNoteLineId === "string" ||
+      (typeof line.deliveryNoteLineId === "string" && line.deliveryNoteLineId.trim()) ||
         (Array.isArray(line.sourceDeliveryLineIds) && line.sourceDeliveryLineIds.length > 0),
     );
   }
@@ -1307,6 +1373,9 @@ function EditableLineTable({
                   <Form.Item hidden name={[field.name, "deliveryNoteLineId"]}>
                     <Input />
                   </Form.Item>
+                  <Form.Item hidden name={[field.name, "sourceDeliveryLineIds"]}>
+                    <HiddenFormValue />
+                  </Form.Item>
                 </>
               ) : null}
             </>
@@ -1318,8 +1387,9 @@ function EditableLineTable({
           key: lineField.name,
           render: (_value: unknown, field: FormListField) => {
             const linkedLine = moduleEntity === "invoices" && isLinkedInvoiceLine(field.name);
-            const linkedReadonlyField =
-              linkedLine && (lineField.name === "itemId" || lineField.name === "quantity");
+            const readonlyField =
+              tableLocked ||
+              (linkedLine && (lineField.name === "itemId" || lineField.name === "quantity"));
 
             return (
             <Form.Item
@@ -1333,7 +1403,7 @@ function EditableLineTable({
               {renderLineControl(lineField, lookups, {
                 invoiceType,
                 moduleEntity,
-                disabled: linkedReadonlyField,
+                disabled: readonlyField,
                 onItemChange: (itemId) => {
                   const item = findLookup(lookups.items, itemId);
                   const vatRate = invoiceType === "STAR"
@@ -1356,7 +1426,7 @@ function EditableLineTable({
           render: (_value: unknown, field: FormListField) => (
             <Button
               danger
-              disabled={moduleEntity === "invoices" && isLinkedInvoiceLine(field.name)}
+              disabled={tableLocked || (moduleEntity === "invoices" && isLinkedInvoiceLine(field.name))}
               onClick={() => removeLine(field.name)}
               size="small"
               type="link"
@@ -1370,7 +1440,7 @@ function EditableLineTable({
       ]}
       dataSource={fields}
       footer={() => (
-        <Button onClick={addLine} type="dashed">
+        <Button disabled={tableLocked} onClick={addLine} type="dashed">
           Satir Ekle
         </Button>
       )}
@@ -1552,7 +1622,25 @@ function canShowVoidAction(entity: DocumentEntity, record: DataRecord) {
   );
 }
 
+function canReviseDeliveryNote(record: DataRecord | null | undefined) {
+  if (!record) {
+    return false;
+  }
+
+  return (
+    record.status === "APPROVED" &&
+    record.is_effective !== false &&
+    !record.invoiced_by_invoice_id &&
+    !record.superseded_by_id &&
+    String(record.merge_role ?? "NORMAL") === "NORMAL"
+  );
+}
+
 function renderDeliveryRoleTag(record: DataRecord, value: string) {
+  if (record.invoiced_by_invoice_id && value === "MERGED_RESULT") {
+    return <Tag color="purple">F/B-Irsaliye</Tag>;
+  }
+
   if (record.invoiced_by_invoice_id) {
     return <Tag color="cyan">F-Irsaliye</Tag>;
   }
@@ -1583,12 +1671,12 @@ function buildMergePreview(
         flow === "SALES_OUT"
           ? row.direction === "OUT" && !row.is_return
             ? quantity
-            : row.direction === "IN" && row.is_return
+            : row.direction === "OUT" && row.is_return
               ? -quantity
               : 0
           : row.direction === "IN" && !row.is_return
             ? quantity
-            : row.direction === "OUT" && row.is_return
+            : row.direction === "IN" && row.is_return
               ? -quantity
               : 0;
 
@@ -1665,6 +1753,11 @@ function defaultLineValues(
     if (field.name === "currency" && context.currency) {
       values[field.name] = context.currency;
     }
+  }
+
+  if (module.entity === "invoices") {
+    values.deliveryNoteLineId = undefined;
+    values.sourceDeliveryLineIds = [];
   }
 
   return values;
@@ -1770,9 +1863,13 @@ function prepareDocumentPayload(
       }
 
       if (module.entity === "invoices") {
-        next.deliveryNoteLineId =
-          typeof line.deliveryNoteLineId === "string" ? line.deliveryNoteLineId : undefined;
-        next.sourceDeliveryLineIds = Array.isArray(line.sourceDeliveryLineIds)
+        const deliveryNoteLineId =
+          typeof line.deliveryNoteLineId === "string" && line.deliveryNoteLineId.trim()
+            ? line.deliveryNoteLineId.trim()
+            : undefined;
+
+        next.deliveryNoteLineId = deliveryNoteLineId;
+        next.sourceDeliveryLineIds = deliveryNoteLineId && Array.isArray(line.sourceDeliveryLineIds)
           ? line.sourceDeliveryLineIds.map(String)
           : [];
       }

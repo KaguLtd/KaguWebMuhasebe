@@ -3,7 +3,7 @@
 import { Alert, App, Button, Card, DatePicker, Form, Space, Switch, Typography } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { fetchPeriodLock, savePeriodLock } from "@/lib/kagu/api";
 import type { PeriodLockConfig } from "@/lib/kagu/contracts";
@@ -26,6 +26,7 @@ export function SettingsPeriodLockPanel({
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<PeriodLockConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const saveInFlightRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -86,6 +87,11 @@ export function SettingsPeriodLockPanel({
   }
 
   async function handleSave() {
+    if (saveInFlightRef.current) {
+      return;
+    }
+
+    saveInFlightRef.current = true;
     setSaving(true);
 
     try {
@@ -103,6 +109,7 @@ export function SettingsPeriodLockPanel({
         message.error(error.message);
       }
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -115,7 +122,7 @@ export function SettingsPeriodLockPanel({
           <Button loading={loading} onClick={() => void loadConfig()}>
             Yenile
           </Button>
-          <Button loading={saving} onClick={handleSave} type="primary">
+          <Button disabled={saving} loading={saving} onClick={handleSave} type="primary">
             Kaydet
           </Button>
         </Space>

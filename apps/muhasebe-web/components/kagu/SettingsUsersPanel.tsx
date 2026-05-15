@@ -16,7 +16,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   SettingsRole,
@@ -62,6 +62,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
   const [search, setSearch] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SettingsUser | null>(null);
+  const saveInFlightRef = useRef(false);
 
   useEffect(() => {
     void loadData();
@@ -111,6 +112,11 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
   }
 
   async function handleSave() {
+    if (saveInFlightRef.current) {
+      return;
+    }
+
+    saveInFlightRef.current = true;
     setSaving(true);
 
     try {
@@ -139,6 +145,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
         message.error(error.message);
       }
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -399,7 +406,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
         </Form>
         <Space className="kagu-drawer-actions">
           <Button onClick={() => setDrawerOpen(false)}>Vazgec</Button>
-          <Button loading={saving} onClick={() => void handleSave()} type="primary">
+          <Button disabled={saving} loading={saving} onClick={() => void handleSave()} type="primary">
             Kaydet
           </Button>
         </Space>

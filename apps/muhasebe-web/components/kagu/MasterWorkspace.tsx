@@ -19,7 +19,7 @@ import {
 import type { TablePaginationConfig } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import { useDeferredValue, useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 
 import { FieldInput } from "./FieldInput";
 import type { FieldConfig, MasterModuleConfig } from "@/lib/kagu/config";
@@ -90,6 +90,7 @@ export function MasterWorkspace({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const saveInFlightRef = useRef(false);
   const [detailReport, setDetailReport] = useState<MasterDetailReport | null>(null);
   const [detailRecord, setDetailRecord] = useState<DataRecord | null>(null);
   const [warehouseDetailMode, setWarehouseDetailMode] = useState<WarehouseDetailMode>("stock");
@@ -258,6 +259,11 @@ export function MasterWorkspace({
   }
 
   async function handleSave() {
+    if (saveInFlightRef.current) {
+      return;
+    }
+
+    saveInFlightRef.current = true;
     setSaving(true);
 
     try {
@@ -275,6 +281,7 @@ export function MasterWorkspace({
         message.error(error.message);
       }
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -406,7 +413,7 @@ export function MasterWorkspace({
         </Form>
         <Space className="kagu-drawer-actions">
           <Button onClick={() => setDrawerOpen(false)}>Vazgec</Button>
-          <Button loading={saving} onClick={handleSave} type="primary">
+          <Button disabled={saving} loading={saving} onClick={handleSave} type="primary">
             Kaydet
           </Button>
         </Space>
