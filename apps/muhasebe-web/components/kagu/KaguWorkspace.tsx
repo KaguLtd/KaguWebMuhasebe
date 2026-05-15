@@ -30,7 +30,6 @@ import {
   Tabs,
   Typography,
 } from "antd";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
@@ -71,7 +70,6 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [lookups, setLookups] = useState<LookupMap>({});
   const [loading, setLoading] = useState(true);
-  const [lookupLoading, setLookupLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
   const masterModule = primaryMasterModules.find((module) => module.key === activeMenu);
   const documentModule = documentModules.find((module) => module.key === activeMenu);
@@ -137,8 +135,6 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
     let active = true;
 
     void (async () => {
-      setLookupLoading(true);
-
       try {
         const entries = await Promise.all(
           missingEntities.map(async (entity) => [entity, await fetchLookups(entity)] as const),
@@ -162,10 +158,6 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
           setBootstrapError(
             error instanceof Error ? error.message : "Lookup verisi alinamadi",
           );
-        }
-      } finally {
-        if (active) {
-          setLookupLoading(false);
         }
       }
     })();
@@ -260,12 +252,6 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
                 </Typography.Title>
               </div>
               <Space wrap>
-                <Link href="/docs">
-                  <Button>Dokumanlar</Button>
-                </Link>
-                <Link href="/intake">
-                  <Button>Kaynak Inceleme</Button>
-                </Link>
                 <Button onClick={handleLogout}>Cikis</Button>
               </Space>
             </Header>
@@ -275,16 +261,9 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
                   <Spin />
                 </div>
               ) : null}
-              {!loading && lookupLoading && activeMenu !== "dashboard" ? (
-                <Alert
-                  description="Bu ekran icin gerekli referans listeleri yalnizca ihtiyac duyuldugunda yukleniyor."
-                  showIcon
-                  type="info"
-                />
-              ) : null}
               {!loading && bootstrapError ? (
                 <Alert
-                  description={`${bootstrapError} PostgreSQL calistiginda dashboard, master data ve belge ekranlari otomatik olarak DB'den beslenecek.`}
+                  description={bootstrapError}
                   showIcon
                   title="Veritabani baglantisi gerekli"
                   type="warning"
@@ -368,14 +347,6 @@ function DashboardPane({ bootstrap }: { bootstrap: BootstrapPayload | null }) {
           />
         </Col>
       </Row>
-      <Card className="kagu-card" title="Faz Durumu">
-        <Alert
-          description="Master data, belge akislari ve rapor gosterimleri ayni veri modeli uzerinden ilerler. Web paneli ayarlar, operasyon ve belge ekranlarini ortak oturum mantiginda toplar."
-          showIcon
-          title="Operasyon verisi merkezi olarak sunuluyor"
-          type="info"
-        />
-      </Card>
     </Space>
   );
 }
@@ -403,7 +374,7 @@ function CurrencyBreakdownCard({
 
   return (
     <Card className="kagu-card">
-      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
         <Typography.Text strong>{title}</Typography.Text>
         {nonZeroEntries.length ? (
           <Descriptions column={1} size="small">

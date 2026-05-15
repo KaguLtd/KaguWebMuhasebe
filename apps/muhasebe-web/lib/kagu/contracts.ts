@@ -4,6 +4,7 @@ export type InvoiceKind = "SALES" | "PURCHASE";
 export type InvoiceType = "STANDARD" | "STAR";
 export type DeliveryDirection = "IN" | "OUT";
 export type DeliveryMergeRole = "NORMAL" | "MERGED_RESULT" | "MERGED_SOURCE";
+export type DeliveryMergeFlow = "SALES_OUT" | "PURCHASE_IN";
 export type ReceiptKind = "COLLECTION" | "PAYMENT";
 export type DocumentStatus = "DRAFT" | "APPROVED" | "VOID" | "SUPERSEDED";
 export type StockCountStatus = "DRAFT" | "FINISHED" | "VOID";
@@ -190,6 +191,20 @@ export interface WarehouseInventoryReport {
   rows: WarehouseInventoryRow[];
 }
 
+export interface WarehouseDocumentMovementRow extends StockMovement {
+  accountLabel: string | null;
+  itemCode: string;
+  itemName: string;
+  projectLabel: string | null;
+  sourceRole: string;
+  status: DocumentStatus | null;
+}
+
+export interface WarehouseDocumentMovementReport {
+  warehouse: DataRecord;
+  rows: WarehouseDocumentMovementRow[];
+}
+
 export type ItemMovementRow = StockMovement & {
   warehouseCode: string;
   warehouseName: string;
@@ -314,6 +329,12 @@ export interface InvoiceMetrics {
   profitMinor: number;
   marginPercent: number | null;
 }
+
+export type DeliveryNoteCandidate = DataRecord & {
+  line_count?: number;
+  lines?: DataRecord[];
+  stock_direction?: DeliveryDirection;
+};
 
 export interface SettingsUser {
   id: string;

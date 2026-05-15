@@ -15,6 +15,8 @@ import type {
   ProjectStockMovementRow,
   WarehouseInventoryReport,
   WarehouseInventoryRow,
+  WarehouseDocumentMovementReport,
+  WarehouseDocumentMovementRow,
 } from "./contracts";
 import { getDbInvoiceMetrics } from "./document-repository";
 import { currency, dateString, number, text } from "./db-shared";
@@ -206,6 +208,95 @@ export async function getDbWarehouseInventoryReport(
     rows: rows.toSorted((left, right) =>
       left.itemCode.localeCompare(right.itemCode, "tr-TR"),
     ),
+    warehouse: {
+      code: warehouse.code,
+      id: warehouse.id,
+      is_active: warehouse.isActive,
+      name: warehouse.name,
+    },
+  };
+}
+
+export async function getDbWarehouseDocumentMovementReport(
+  warehouseId: string,
+): Promise<WarehouseDocumentMovementReport | null> {
+  const warehouse = await prisma.warehouse.findUnique({ where: { id: warehouseId } });
+
+  if (!warehouse) {
+    return null;
+  }
+
+  const movements = await prisma.stockMovement.findMany({
+    include: { item: true, project: true },
+    orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
+    where: { warehouseId },
+  });
+  const docKeys = movements.map((movement) => ({ docId: movement.docId, docType: movement.docType }));
+  const deliveryIds = docKeys
+    .filter((key) => key.docType.startsWith("DELIVERY_NOTE"))
+    .map((key) => key.docId);
+  const invoiceIds = docKeys
+    .filter((key) => key.docType.includes("INVOICE"))
+    .map((key) => key.docId);
+  const [deliveryNotes, invoices] = await Promise.all([
+    prisma.deliveryNote.findMany({
+      include: { account: true },
+      where: { id: { in: deliveryIds } },
+    }),
+    prisma.invoice.findMany({
+      include: { account: true },
+      where: { id: { in: invoiceIds } },
+    }),
+  ]);
+  const deliveryById = new Map(deliveryNotes.map((note) => [note.id, note]));
+  const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+
+  const rows: WarehouseDocumentMovementRow[] = movements.map((movement) => {
+    const delivery = deliveryById.get(movement.docId);
+    const invoice = invoiceById.get(movement.docId);
+
+    return {
+      accountLabel: delivery
+        ? `${delivery.account.code} - ${delivery.account.name}`
+        : invoice
+          ? `${invoice.account.code} - ${invoice.account.name}`
+          : null,
+      cancelledAt: movement.cancelledAt?.toISOString() ?? null,
+      createdAt: movement.createdAt.toISOString(),
+      docDate: dateString(movement.docDate),
+      docId: movement.docId,
+      docNo: movement.docNo,
+      docType: movement.docType,
+      id: movement.id,
+      isEffective: movement.isEffective !== false,
+      itemCode: movement.item.code,
+      itemId: movement.itemId,
+      itemName: movement.item.name,
+      projectId: movement.projectId,
+      projectLabel: movement.project ? `${movement.project.code} - ${movement.project.name}` : null,
+      qtyIn: number(movement.qtyIn),
+      qtyOut: number(movement.qtyOut),
+      replacedByDocId: movement.replacedByDocId ?? null,
+      sourceRole: delivery
+        ? delivery.invoicedByInvoiceId
+          ? "F-Irsaliye"
+          : delivery.mergeRole === "MERGED_RESULT"
+            ? "B-Irsaliye"
+            : delivery.mergeRole === "MERGED_SOURCE"
+              ? "K-Irsaliye"
+              : "Normal"
+        : invoice
+          ? invoice.invoiceKind === "SALES"
+            ? "Satis Faturasi"
+            : "Alis Faturasi"
+          : movement.docType,
+      status: delivery?.status ?? invoice?.status ?? null,
+      warehouseId: movement.warehouseId,
+    };
+  });
+
+  return {
+    rows,
     warehouse: {
       code: warehouse.code,
       id: warehouse.id,

@@ -120,7 +120,7 @@ export function ProjectReportsWorkspace({ lookups }: { lookups: LookupMap }) {
       title="Proje Raporlari"
       extra={<Typography.Text type="secondary">v1 operasyon gorunumu</Typography.Text>}
     >
-      <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Alert
           description="Bu yuzey proje bazli hareketi tek noktada toplar. Tahmini brut marj raporu tam P&L degil; iscilik, genel gider ve tahsilat akisi dahil edilmez."
           showIcon
@@ -220,7 +220,7 @@ function StockReportPane({
   report: ProjectStockMovementReport | null;
 }) {
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <SummaryRow
         items={[
           { label: "Hareket", value: report?.summary.movementCount ?? 0 },
@@ -268,7 +268,7 @@ function InvoiceReportPane({
   report: ProjectInvoiceListReport | null;
 }) {
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <SummaryRow
         items={[
           { label: "Fatura", value: report?.summary.invoiceCount ?? 0 },
@@ -327,7 +327,7 @@ function UsageReportPane({
   report: ProjectMaterialUsageReport | null;
 }) {
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <SummaryRow
         items={[
           { label: "Malzeme", value: report?.summary.distinctItemCount ?? 0 },
@@ -379,7 +379,7 @@ function MarginReportPane({
   const currency = report?.summary.currency ?? undefined;
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert
         description="Bu rapor tahmini brut marj verir. Iscilik, genel gider, tahsilat/odeme akisi ve tam proje P&L kapsam disidir."
         showIcon
@@ -482,7 +482,7 @@ function CurrencySummaryCard({
 
   return (
     <Card className="kagu-card" size="small" title="Doviz Bazli Ozet">
-      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
         {currencies.map((currency) => (
           <Typography.Text key={currency}>
             {currency} net: {formatMinor(netTotals?.[currency] ?? 0, currency)} | {currency} brut:{" "}

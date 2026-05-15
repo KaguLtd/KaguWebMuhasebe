@@ -201,7 +201,9 @@ export async function saveDbDocumentDraft(
     await assertDocumentParityWithTx(tx, entity, nextHeader, payload.lines ?? []);
     await reserveInvoiceDraftNumber(tx, entity, id, nextHeader);
 
-    const nextLines = normalizeLines(entity, id, payload.lines ?? []);
+    const nextLines = normalizeLines(entity, id, payload.lines ?? [], {
+      regenerateLineIds: Boolean(superseded && superseded.id !== id),
+    });
 
     if (entity === "invoices") {
       applyInvoiceTotals(nextHeader, nextLines);
@@ -257,6 +259,9 @@ export async function approveDbDocument(
       typeof header.supersedes_id === "string" && header.supersedes_id.trim()
         ? header.supersedes_id.trim()
         : null;
+    if (entity === "invoices") {
+      await assertInvoiceDeliveryLinksCanApprove(tx, header, lines, supersedesId);
+    }
     const superseded =
       supersedesId && supersedesId !== id ? await findHeader(tx, entity, supersedesId) : null;
 
@@ -287,6 +292,14 @@ export async function approveDbDocument(
 
     await upsertHeader(tx, entity, id, nextHeader);
     await postDocument(tx, entity, nextHeader, lines);
+
+    if (entity === "deliveryNotes" && nextHeader.merge_role === "MERGED_RESULT") {
+      await finalizeMergedDeliveryApproval(tx, nextHeader, actorUserId);
+    }
+
+    if (entity === "invoices") {
+      await finalizeInvoiceDeliveryTransfer(tx, nextHeader, lines, supersedesId, actorUserId);
+    }
 
     if (superseded) {
       await supersedeDocument(tx, entity, superseded, String(nextHeader.id), actorUserId);
@@ -350,11 +363,263 @@ export async function voidDbDocument(
     };
 
     await upsertHeader(tx, entity, id, nextHeader);
+    if (entity === "invoices") {
+      await restoreDeliveryNotesFromVoidedInvoice(tx, id, actorUserId);
+    }
     await recordRevision(tx, documentType(entity, header), id, reason, nextHeader);
     await recordAudit(tx, entity, id, "VOID", nextHeader, actorUserId);
 
     return getDocumentWithTx(tx, entity, id);
   });
+}
+
+export type DeliveryMergeFlow = "SALES_OUT" | "PURCHASE_IN";
+
+export async function listDbDeliveryMergeCandidates(query: ListQuery = {}) {
+  const where: Prisma.DeliveryNoteWhereInput = {
+    invoicedByInvoiceId: null,
+    isEffective: true,
+    mergeRole: DbDeliveryMergeRole.NORMAL,
+    status: DbDocumentStatus.APPROVED,
+  };
+
+  if (query.accountId) {
+    where.accountId = query.accountId;
+  }
+
+  if (query.projectId) {
+    where.projectId = query.projectId;
+  }
+
+  if (query.warehouseId) {
+    where.warehouseId = query.warehouseId;
+  }
+
+  const rows = await prisma.deliveryNote.findMany({
+    include: { lines: true },
+    orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
+    take: 200,
+    where,
+  });
+
+  return rows.map((row) => ({
+    ...deliveryHeaderRecord(row),
+    line_count: row.lines.length,
+    lines: row.lines.map(deliveryLineRecord),
+    stock_direction: resolveDeliveryStockDirection(deliveryHeaderRecord(row)),
+  }));
+}
+
+export async function createDbMergedDeliveryNoteDraft(
+  sourceDeliveryNoteIds: string[],
+  flow: DeliveryMergeFlow,
+  actorUserId: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    const sourceIds = [...new Set(sourceDeliveryNoteIds.map((id) => id.trim()).filter(Boolean))];
+
+    if (sourceIds.length < 2) {
+      throw new Error("Birlesim icin en az iki irsaliye secilmelidir");
+    }
+
+    const sources = await tx.deliveryNote.findMany({
+      include: { lines: true },
+      where: { id: { in: sourceIds } },
+    });
+
+    if (sources.length !== sourceIds.length) {
+      throw new Error("Secilen irsaliyeler bulunamadi");
+    }
+
+    const header = validateMergeSources(sources, flow);
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const lines = buildMergedDeliveryLines(id, sources, flow);
+
+    if (!lines.length) {
+      throw new Error("Birlesim sonucu net miktar sifir; B-Irsaliye olusturulmadi");
+    }
+
+    const nextHeader: DataRecord = {
+      account_id: header.accountId,
+      actual_doc_no: `BIR-${now.slice(0, 10)}`,
+      approved_at: null,
+      change_note: null,
+      changed_by_user_id: actorUserId,
+      created_at: now,
+      description: "Irsaliye birlestirme taslagi",
+      direction: flow === "SALES_OUT" ? "OUT" : "IN",
+      doc_date: today(),
+      doc_no: draftDocNo(id),
+      id,
+      invoiced_at: null,
+      invoiced_by_invoice_id: null,
+      is_effective: true,
+      is_return: false,
+      merge_role: "MERGED_RESULT",
+      project_id: header.projectId,
+      status: "DRAFT",
+      superseded_at: null,
+      superseded_by_id: null,
+      supersedes_id: null,
+      updated_at: now,
+      void_reason: null,
+      voided_at: null,
+      warehouse_id: header.warehouseId,
+    };
+
+    await upsertHeader(tx, "deliveryNotes", id, nextHeader);
+    await replaceLines(tx, "deliveryNotes", id, lines);
+    await tx.deliveryNote.updateMany({
+      data: { supersededById: id },
+      where: { id: { in: sourceIds }, mergeRole: DbDeliveryMergeRole.NORMAL },
+    });
+    await recordAudit(tx, "deliveryNotes", id, "CREATE_MERGE_DRAFT", {
+      ...nextHeader,
+      source_delivery_note_ids: sourceIds,
+    }, actorUserId);
+
+    return getDocumentWithTx(tx, "deliveryNotes", id);
+  });
+}
+
+export async function unmergeDbDeliveryNote(id: string, actorUserId: string) {
+  return prisma.$transaction(async (tx) => {
+    const header = await findHeader(tx, "deliveryNotes", id);
+
+    if (!header) {
+      throw new Error("B-Irsaliye bulunamadi");
+    }
+
+    if (header.merge_role !== "MERGED_RESULT") {
+      throw new Error("Yalnizca B-Irsaliye cozulebilir");
+    }
+
+    if (header.status !== "APPROVED" || header.is_effective !== true) {
+      throw new Error("Yalnizca aktif ve onayli B-Irsaliye cozulebilir");
+    }
+
+    if (header.invoiced_by_invoice_id) {
+      throw new Error("Faturaya aktarilmis B-Irsaliye cozulemez");
+    }
+
+    await deactivateDocumentEffects(tx, id, null);
+    const nextHeader = {
+      ...header,
+      is_effective: false,
+      status: "VOID",
+      void_reason: "Birlesim cozuldu",
+      voided_at: new Date().toISOString(),
+      changed_by_user_id: actorUserId,
+    };
+
+    await upsertHeader(tx, "deliveryNotes", id, nextHeader);
+
+    const sources = await tx.deliveryNote.findMany({
+      where: { supersededById: id, mergeRole: DbDeliveryMergeRole.MERGED_SOURCE },
+    });
+
+    for (const source of sources) {
+      await tx.deliveryNote.update({
+        data: {
+          changedByUserId: actorUserId,
+          isEffective: true,
+          mergeRole: DbDeliveryMergeRole.NORMAL,
+          supersededById: null,
+        },
+        where: { id: source.id },
+      });
+      await reactivateDocumentStockEffects(tx, source.id);
+      await recordAudit(tx, "deliveryNotes", source.id, "RESTORE_MERGE_SOURCE", {
+        restored_by_delivery_note_id: id,
+      }, actorUserId);
+    }
+
+    await recordAudit(tx, "deliveryNotes", id, "UNMERGE", nextHeader, actorUserId);
+
+    return getDocumentWithTx(tx, "deliveryNotes", id);
+  });
+}
+
+export async function listDbInvoiceDeliveryNoteCandidates(query: ListQuery = {}) {
+  const where: Prisma.DeliveryNoteWhereInput = {
+    invoicedByInvoiceId: null,
+    isEffective: true,
+    mergeRole: { not: DbDeliveryMergeRole.MERGED_SOURCE },
+    status: DbDocumentStatus.APPROVED,
+  };
+
+  if (query.accountId) {
+    where.accountId = query.accountId;
+  }
+
+  if (query.projectId) {
+    where.projectId = query.projectId;
+  }
+
+  if (query.warehouseId) {
+    where.warehouseId = query.warehouseId;
+  }
+
+  const rows = await prisma.deliveryNote.findMany({
+    include: { lines: true },
+    orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
+    take: 200,
+    where,
+  });
+
+  return rows.map((row) => ({
+    ...deliveryHeaderRecord(row),
+    line_count: row.lines.length,
+    lines: row.lines.map(deliveryLineRecord),
+    stock_direction: resolveDeliveryStockDirection(deliveryHeaderRecord(row)),
+  }));
+}
+
+export async function importDbDeliveryNoteToInvoiceDraft(
+  deliveryNoteId: string,
+  payload: DocumentPayload,
+  actorUserId: string,
+) {
+  const deliveryNote = await prisma.deliveryNote.findUnique({
+    include: { account: true, lines: true },
+    where: { id: deliveryNoteId },
+  });
+
+  if (!deliveryNote) {
+    throw new Error("Irsaliye bulunamadi");
+  }
+
+  const deliveryHeader = deliveryHeaderRecord(deliveryNote);
+  assertDeliveryNoteCanImport(deliveryHeader);
+
+  const invoiceKind = resolveInvoiceKindForDeliveryImport(
+    deliveryNote.account.accountKind,
+    typeof payload.invoiceKind === "string" ? payload.invoiceKind : null,
+    resolveDeliveryStockDirection(deliveryHeader),
+  );
+
+  return saveDbDocumentDraft(
+    "invoices",
+    {
+      ...payload,
+      accountId: deliveryNote.accountId,
+      currency: deliveryNote.account.currency,
+      invoiceKind,
+      projectId: deliveryNote.projectId,
+      warehouseId: deliveryNote.warehouseId,
+      lines: deliveryNote.lines.map((line) => ({
+        deliveryNoteLineId: line.id,
+        description: line.description ?? undefined,
+        itemId: line.itemId,
+        quantity: number(line.quantity),
+        sourceDeliveryLineIds: [line.id],
+        unitPriceMinor: line.unitPriceMinor,
+        vatRateBps: line.vatRateBps,
+      })),
+    },
+    actorUserId,
+  );
 }
 
 export async function getDbInvoiceMetrics(invoiceId: string): Promise<InvoiceMetrics | null> {
@@ -579,6 +844,8 @@ async function upsertHeader(
           docDate: toDate(header.doc_date),
           docNo: text(header.doc_no),
           id,
+          invoicedAt: optionalDate(header.invoiced_at),
+          invoicedByInvoiceId: nullableString(header.invoiced_by_invoice_id),
           isEffective: header.is_effective !== false,
           isReturn: header.is_return === true,
           mergeRole: dbDeliveryMergeRole(header.merge_role),
@@ -601,6 +868,8 @@ async function upsertHeader(
           direction: dbDeliveryDirection(header.direction),
           docDate: toDate(header.doc_date),
           docNo: text(header.doc_no),
+          invoicedAt: optionalDate(header.invoiced_at),
+          invoicedByInvoiceId: nullableString(header.invoiced_by_invoice_id),
           isEffective: header.is_effective !== false,
           isReturn: header.is_return === true,
           mergeRole: dbDeliveryMergeRole(header.merge_role),
@@ -854,6 +1123,7 @@ function normalizeLines(
   entity: DocumentEntity,
   documentId: string,
   lines: NonNullable<DocumentPayload["lines"]>,
+  options: { regenerateLineIds?: boolean } = {},
 ) {
   if (entity === "receipts" || entity === "transfers") {
     return [];
@@ -875,7 +1145,7 @@ function normalizeLines(
         typeof line.deliveryNoteLineId === "string" ? line.deliveryNoteLineId : null,
       description: typeof line.description === "string" ? line.description : null,
       gross_total_minor: grossTotalMinor,
-      id: line.id ?? randomUUID(),
+      id: options.regenerateLineIds ? randomUUID() : line.id ?? randomUUID(),
       item_id: line.itemId ?? null,
       line_total_minor: grossTotalMinor,
       net_total_minor: netTotalMinor,
@@ -1001,11 +1271,9 @@ async function postDocument(
     });
 
     if (header.warehouse_id) {
-      const directLines = lines.filter((line) => !hasDeliveryLink(line));
-
-      if (directLines.length) {
+      if (lines.length) {
         await tx.stockMovement.createMany({
-          data: directLines.map((line) => ({
+          data: lines.map((line) => ({
             cancelledAt: null,
             docDate,
             docId: String(header.id),
@@ -1112,6 +1380,113 @@ async function deactivateDocumentEffects(
     },
     where: { docId: id, isEffective: true },
   });
+}
+
+async function reactivateDocumentStockEffects(tx: Tx, id: string) {
+  await tx.stockMovement.updateMany({
+    data: {
+      cancelledAt: null,
+      isEffective: true,
+      replacedByDocId: null,
+    },
+    where: { docId: id },
+  });
+}
+
+async function finalizeMergedDeliveryApproval(
+  tx: Tx,
+  mergedHeader: DataRecord,
+  actorUserId: string,
+) {
+  const mergedId = String(mergedHeader.id);
+  const sources = await tx.deliveryNote.findMany({
+    where: {
+      invoicedByInvoiceId: null,
+      isEffective: true,
+      mergeRole: DbDeliveryMergeRole.NORMAL,
+      status: DbDocumentStatus.APPROVED,
+      supersededById: mergedId,
+    },
+  });
+
+  if (!sources.length) {
+    throw new Error("B-Irsaliye kaynaklari bulunamadi");
+  }
+
+  for (const source of sources) {
+    await tx.deliveryNote.update({
+      data: {
+        changedByUserId: actorUserId,
+        isEffective: false,
+        mergeRole: DbDeliveryMergeRole.MERGED_SOURCE,
+        supersededById: mergedId,
+      },
+      where: { id: source.id },
+    });
+    await deactivateDocumentEffects(tx, source.id, mergedId);
+    await recordAudit(tx, "deliveryNotes", source.id, "MARK_MERGE_SOURCE", {
+      merged_delivery_note_id: mergedId,
+    }, actorUserId);
+  }
+}
+
+async function finalizeInvoiceDeliveryTransfer(
+  tx: Tx,
+  invoiceHeader: DataRecord,
+  lines: DataRecord[],
+  supersedesInvoiceId: string | null,
+  actorUserId: string,
+) {
+  const deliveryNoteIds = await resolveDeliveryNoteIdsFromInvoiceLines(tx, lines);
+
+  if (!deliveryNoteIds.length) {
+    return;
+  }
+
+  const now = new Date();
+
+  for (const deliveryNoteId of deliveryNoteIds) {
+    await tx.deliveryNote.update({
+      data: {
+        changedByUserId: actorUserId,
+        invoicedAt: now,
+        invoicedByInvoiceId: String(invoiceHeader.id),
+        isEffective: false,
+      },
+      where: { id: deliveryNoteId },
+    });
+    await deactivateDocumentEffects(tx, deliveryNoteId, String(invoiceHeader.id));
+    await recordAudit(tx, "deliveryNotes", deliveryNoteId, "MARK_INVOICED", {
+      invoice_id: String(invoiceHeader.id),
+      supersedes_invoice_id: supersedesInvoiceId,
+    }, actorUserId);
+  }
+}
+
+async function restoreDeliveryNotesFromVoidedInvoice(
+  tx: Tx,
+  invoiceId: string,
+  actorUserId: string,
+) {
+  const rows = await tx.deliveryNote.findMany({
+    where: { invoicedByInvoiceId: invoiceId, status: DbDocumentStatus.APPROVED },
+  });
+
+  for (const row of rows) {
+    await tx.deliveryNote.update({
+      data: {
+        changedByUserId: actorUserId,
+        invoicedAt: null,
+        invoicedByInvoiceId: null,
+        isEffective: true,
+      },
+      where: { id: row.id },
+    });
+    await reactivateDocumentStockEffects(tx, row.id);
+    await recordAudit(tx, "deliveryNotes", row.id, "RESTORE_FROM_VOIDED_INVOICE", {
+      invoice_id: invoiceId,
+    }, actorUserId);
+  }
 }
 
 async function supersedeDocument(
@@ -1361,36 +1736,274 @@ async function assertDeliveryNoteCanVoid(tx: Tx, header: DataRecord) {
   }
 }
 
-async function noteHasActiveInvoiceLink(tx: Tx, deliveryNoteId: string) {
-  const invoicedDeliveryNoteIds = await getInvoicedDeliveryNoteIds(tx);
+function validateMergeSources(
+  sources: Array<{
+    accountId: string;
+    direction: DbDeliveryDirection | string;
+    id: string;
+    invoicedByInvoiceId?: string | null;
+    isEffective?: boolean;
+    isReturn: boolean;
+    mergeRole: DbDeliveryMergeRole | string;
+    projectId: string | null;
+    status: DbDocumentStatus | string;
+    warehouseId: string;
+  }>,
+  flow: DeliveryMergeFlow,
+) {
+  const [first] = sources;
 
-  return invoicedDeliveryNoteIds.has(deliveryNoteId);
-}
+  for (const source of sources) {
+    if (source.status !== "APPROVED" || source.isEffective === false) {
+      throw new Error("Yalnizca aktif ve onayli irsaliyeler birlestirilebilir");
+    }
 
-async function getInvoicedDeliveryNoteIds(tx: Tx) {
-  const activeInvoices = await tx.invoice.findMany({
-    select: { id: true },
-    where: { isEffective: true, status: { not: "VOID" } },
-  });
-  const activeInvoiceIds = activeInvoices.map((invoice) => invoice.id);
+    if (source.mergeRole !== "NORMAL" || source.invoicedByInvoiceId) {
+      throw new Error("K/F/B irsaliyeler birlestirme kaynagi olamaz");
+    }
 
-  if (!activeInvoiceIds.length) {
-    return new Set<string>();
+    if (source.accountId !== first.accountId) {
+      throw new Error("Farkli cariler birlestirilemez");
+    }
+
+    if (source.warehouseId !== first.warehouseId) {
+      throw new Error("Farkli depolar birlestirilemez");
+    }
+
+    if ((source.projectId ?? null) !== (first.projectId ?? null)) {
+      throw new Error("Farkli projeler birlestirilemez");
+    }
+
+    signedQuantityForMerge(source.direction, source.isReturn, 1, flow);
   }
 
-  const invoiceLines = await tx.invoiceLine.findMany({
-    where: { invoiceId: { in: activeInvoiceIds } },
+  return first;
+}
+
+function buildMergedDeliveryLines(
+  mergedDeliveryNoteId: string,
+  sources: Array<{
+    direction: DbDeliveryDirection | string;
+    isReturn: boolean;
+    lines: Array<{
+      currency: DbCurrency | string;
+      description: string | null;
+      itemId: string;
+      quantity: unknown;
+      unitPriceMinor: number;
+      vatRateBps: number;
+    }>;
+  }>,
+  flow: DeliveryMergeFlow,
+) {
+  const byItem = new Map<
+    string,
+    {
+      currency: string;
+      descriptions: Set<string>;
+      itemId: string;
+      netQuantity: number;
+      priceAmount: number;
+      priceQuantity: number;
+      vatRateBps: number;
+    }
+  >();
+
+  for (const source of sources) {
+    for (const line of source.lines) {
+      const signedQuantity = signedQuantityForMerge(
+        source.direction,
+        source.isReturn,
+        number(line.quantity),
+        flow,
+      );
+      const current =
+        byItem.get(line.itemId) ??
+        {
+          currency: currency(line.currency),
+          descriptions: new Set<string>(),
+          itemId: line.itemId,
+          netQuantity: 0,
+          priceAmount: 0,
+          priceQuantity: 0,
+          vatRateBps: line.vatRateBps,
+        };
+
+      current.netQuantity += signedQuantity;
+      current.priceAmount += Math.abs(signedQuantity) * line.unitPriceMinor;
+      current.priceQuantity += Math.abs(signedQuantity);
+      current.vatRateBps = line.vatRateBps;
+      if (line.description) {
+        current.descriptions.add(line.description);
+      }
+      byItem.set(line.itemId, current);
+    }
+  }
+
+  return Array.from(byItem.values())
+    .filter((group) => Math.abs(group.netQuantity) > 0.000001)
+    .map((group) => {
+      if (group.netQuantity < 0) {
+        throw new Error(`Negatif net miktar reddedildi: ${group.itemId}`);
+      }
+
+      const unitPriceMinor =
+        group.priceQuantity > 0 ? roundMinor(group.priceAmount / group.priceQuantity) : 0;
+      const netTotalMinor = roundMinor(group.netQuantity * unitPriceMinor);
+      const vatTotalMinor = roundMinor((netTotalMinor * group.vatRateBps) / 10000);
+
+      return {
+        currency: group.currency,
+        delivery_note_id: mergedDeliveryNoteId,
+        description: Array.from(group.descriptions).slice(0, 2).join(" / ") || null,
+        gross_total_minor: netTotalMinor + vatTotalMinor,
+        id: randomUUID(),
+        item_id: group.itemId,
+        line_total_minor: netTotalMinor + vatTotalMinor,
+        net_total_minor: netTotalMinor,
+        quantity: group.netQuantity,
+        unit_price_minor: unitPriceMinor,
+        vat_rate_bps: group.vatRateBps,
+        vat_total_minor: vatTotalMinor,
+      } satisfies DataRecord;
+    });
+}
+
+function signedQuantityForMerge(
+  direction: DbDeliveryDirection | string,
+  isReturn: boolean,
+  quantity: number,
+  flow: DeliveryMergeFlow,
+) {
+  if (flow === "SALES_OUT") {
+    if (direction === "OUT" && !isReturn) {
+      return quantity;
+    }
+
+    if (direction === "IN" && isReturn) {
+      return -quantity;
+    }
+  }
+
+  if (flow === "PURCHASE_IN") {
+    if (direction === "IN" && !isReturn) {
+      return quantity;
+    }
+
+    if (direction === "OUT" && isReturn) {
+      return -quantity;
+    }
+  }
+
+  throw new Error("Secilen irsaliye net akis tipiyle uyumlu degil");
+}
+
+function assertDeliveryNoteCanImport(header: DataRecord) {
+  if (header.status !== "APPROVED" || header.is_effective !== true) {
+    throw new Error("Yalnizca aktif ve onayli irsaliye faturaya aktarilabilir");
+  }
+
+  if (header.merge_role === "MERGED_SOURCE") {
+    throw new Error("K-Irsaliye faturaya aktarilamaz");
+  }
+
+  if (header.invoiced_by_invoice_id) {
+    throw new Error("Faturalanmis irsaliye tekrar aktarilamaz");
+  }
+}
+
+function resolveInvoiceKindForDeliveryImport(
+  accountKind: string,
+  requestedInvoiceKind: string | null,
+  stockDirection: "IN" | "OUT",
+): "SALES" | "PURCHASE" {
+  const invoiceKind =
+    accountKind === "CUSTOMER"
+      ? "SALES"
+      : accountKind === "SUPPLIER"
+        ? "PURCHASE"
+        : requestedInvoiceKind === "PURCHASE"
+          ? "PURCHASE"
+          : "SALES";
+
+  if (invoiceKind === "SALES" && stockDirection !== "OUT") {
+    throw new Error("Satis faturasi yalnizca OUT etkili irsaliyeyi aktarabilir");
+  }
+
+  if (invoiceKind === "PURCHASE" && stockDirection !== "IN") {
+    throw new Error("Alis faturasi yalnizca IN etkili irsaliyeyi aktarabilir");
+  }
+
+  return invoiceKind;
+}
+
+async function assertInvoiceDeliveryLinksCanApprove(
+  tx: Tx,
+  invoiceHeader: DataRecord,
+  lines: DataRecord[],
+  supersedesInvoiceId: string | null,
+) {
+  const deliveryNoteIds = await resolveDeliveryNoteIdsFromInvoiceLines(tx, lines);
+
+  if (!deliveryNoteIds.length) {
+    return;
+  }
+
+  const notes = await tx.deliveryNote.findMany({
+    include: { account: true },
+    where: { id: { in: deliveryNoteIds } },
   });
+
+  if (notes.length !== deliveryNoteIds.length) {
+    throw new Error("Fatura kaynak irsaliyesi bulunamadi");
+  }
+
+  for (const note of notes) {
+    const header = deliveryHeaderRecord(note);
+    const isRevisionSource =
+      Boolean(supersedesInvoiceId) && header.invoiced_by_invoice_id === supersedesInvoiceId;
+
+    if (header.merge_role === "MERGED_SOURCE") {
+      throw new Error("K-Irsaliye faturaya aktarilamaz");
+    }
+
+    if (header.status !== "APPROVED") {
+      throw new Error("Yalnizca onayli irsaliye faturaya aktarilabilir");
+    }
+
+    if (!isRevisionSource && header.is_effective !== true) {
+      throw new Error("Etkisiz irsaliye faturaya aktarilamaz");
+    }
+
+    if (
+      header.invoiced_by_invoice_id &&
+      header.invoiced_by_invoice_id !== supersedesInvoiceId
+    ) {
+      throw new Error("Faturalanmis irsaliye tekrar faturaya aktarilamaz");
+    }
+
+    if (note.accountId !== invoiceHeader.account_id) {
+      throw new Error("Fatura ve irsaliye carisi ayni olmalidir");
+    }
+
+    const stockDirection = resolveDeliveryStockDirection(header);
+    if (invoiceHeader.invoice_kind === "SALES" && stockDirection !== "OUT") {
+      throw new Error("Satis faturasi yalnizca OUT etkili irsaliye aktarabilir");
+    }
+
+    if (invoiceHeader.invoice_kind === "PURCHASE" && stockDirection !== "IN") {
+      throw new Error("Alis faturasi yalnizca IN etkili irsaliye aktarabilir");
+    }
+  }
+}
+
+async function resolveDeliveryNoteIdsFromInvoiceLines(tx: Tx, lines: DataRecord[]) {
   const sourceDeliveryLineIds = Array.from(
-    new Set(
-      invoiceLines.flatMap((line) =>
-        getStoredSourceDeliveryLineIds(invoiceLineRecord(line)),
-      ),
-    ),
+    new Set(lines.flatMap((line) => getStoredSourceDeliveryLineIds(line))),
   );
 
   if (!sourceDeliveryLineIds.length) {
-    return new Set<string>();
+    return [];
   }
 
   const deliveryLines = await tx.deliveryNoteLine.findMany({
@@ -1398,7 +2011,22 @@ async function getInvoicedDeliveryNoteIds(tx: Tx) {
     where: { id: { in: sourceDeliveryLineIds } },
   });
 
-  return new Set(deliveryLines.map((line) => line.deliveryNoteId));
+  return Array.from(new Set(deliveryLines.map((line) => line.deliveryNoteId)));
+}
+
+async function noteHasActiveInvoiceLink(tx: Tx, deliveryNoteId: string) {
+  const invoicedDeliveryNoteIds = await getInvoicedDeliveryNoteIds(tx);
+
+  return invoicedDeliveryNoteIds.has(deliveryNoteId);
+}
+
+async function getInvoicedDeliveryNoteIds(tx: Tx) {
+  const rows = await tx.deliveryNote.findMany({
+    select: { id: true },
+    where: { invoicedByInvoiceId: { not: null } },
+  });
+
+  return new Set(rows.map((line) => line.id));
 }
 
 async function reserveInvoiceDraftNumber(
@@ -1525,17 +2153,9 @@ function buildDeliveryNoteWhere(query: ListQuery): Prisma.DeliveryNoteWhereInput
   applyDateRange(where, query);
 
   if (query.invoiceState === "INVOICED") {
-    where.lines = {
-      some: { invoiceLines: { some: { invoice: { isEffective: true, status: { not: "VOID" } } } } },
-    };
+    where.invoicedByInvoiceId = { not: null };
   } else if (query.invoiceState === "UNINVOICED" || query.onlyOpenForInvoicing) {
-    where.NOT = {
-      lines: {
-        some: {
-          invoiceLines: { some: { invoice: { isEffective: true, status: { not: "VOID" } } } },
-        },
-      },
-    };
+    where.invoicedByInvoiceId = null;
 
     if (query.onlyOpenForInvoicing) {
       where.status = DbDocumentStatus.APPROVED;
@@ -1969,6 +2589,8 @@ function deliveryHeaderRecord(row: {
   docDate: Date;
   docNo: string;
   id: string;
+  invoicedAt?: Date | null;
+  invoicedByInvoiceId?: string | null;
   isEffective?: boolean;
   isReturn: boolean;
   mergeRole: string;
@@ -1994,6 +2616,8 @@ function deliveryHeaderRecord(row: {
     doc_date: dateString(row.docDate),
     doc_no: row.docNo,
     id: row.id,
+    invoiced_at: row.invoicedAt ? isoString(row.invoicedAt) : null,
+    invoiced_by_invoice_id: row.invoicedByInvoiceId ?? null,
     is_effective: row.isEffective !== false,
     is_return: row.isReturn,
     merge_role: row.mergeRole,

@@ -168,7 +168,7 @@ test("return delivery notes flip stock direction", () => {
   assert.equal(approved.stockMovements[0].qtyOut, 0);
 });
 
-test("invoice lines linked to delivery lines do not post duplicate stock movement", () => {
+test("invoice lines linked to delivery lines move stock effect from delivery to invoice", () => {
   const delivery = engine.saveDocumentDraft("deliveryNotes", {
     direction: "OUT",
     actualDocNo: "IRS-LINK-001",
@@ -209,7 +209,11 @@ test("invoice lines linked to delivery lines do not post duplicate stock movemen
   const approved = engine.approveDocument("invoices", invoice.header.id);
 
   assert.equal(approved.ledgerEntries.length, 1);
-  assert.equal(approved.stockMovements.length, 0);
+  assert.equal(approved.stockMovements.length, 1);
+  assert.equal(approved.stockMovements[0].qtyOut, 4);
+  const restoredDelivery = engine.getDocument("deliveryNotes", delivery.header.id);
+  assert.equal(restoredDelivery.header.is_effective, false);
+  assert.equal(restoredDelivery.header.invoiced_by_invoice_id, invoice.header.id);
 });
 
 test("account balances and item stock are derived from posted movements", () => {

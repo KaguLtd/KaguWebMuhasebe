@@ -2,6 +2,8 @@ import type {
   AccountStatementReport,
   AppSnapshot,
   DataRecord,
+  DeliveryMergeFlow,
+  DeliveryNoteCandidate,
   DocumentDetail,
   DocumentEntity,
   DocumentPayload,
@@ -23,6 +25,7 @@ import type {
   SettingsUser,
   SettingsUserPayload,
   WarehouseInventoryReport,
+  WarehouseDocumentMovementReport,
 } from "./contracts";
 
 export type BootstrapPayload = AppSnapshot & {
@@ -139,6 +142,50 @@ export async function voidDocumentRecord(
   });
 }
 
+export async function fetchDeliveryMergeCandidates(query: ListQuery = {}) {
+  const payload = await fetchJson<{ items: DeliveryNoteCandidate[] }>(
+    `/api/delivery-notes/merge-candidates${querySuffix(query)}`,
+  );
+
+  return payload.items;
+}
+
+export async function createMergedDeliveryNoteDraft(
+  sourceDeliveryNoteIds: string[],
+  flow: DeliveryMergeFlow,
+) {
+  return fetchJson<DocumentDetail<DataRecord>>(`/api/delivery-notes/merge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ flow, sourceDeliveryNoteIds }),
+  });
+}
+
+export async function unmergeDeliveryNote(id: string) {
+  return fetchJson<DocumentDetail<DataRecord>>(`/api/delivery-notes/${id}/unmerge`, {
+    method: "POST",
+  });
+}
+
+export async function fetchInvoiceDeliveryNoteCandidates(query: ListQuery = {}) {
+  const payload = await fetchJson<{ items: DeliveryNoteCandidate[] }>(
+    `/api/invoices/delivery-note-candidates${querySuffix(query)}`,
+  );
+
+  return payload.items;
+}
+
+export async function importDeliveryNoteToInvoice(
+  deliveryNoteId: string,
+  payload: DocumentPayload,
+) {
+  return fetchJson<DocumentDetail<DataRecord>>(`/api/invoices/import-delivery-note`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, deliveryNoteId }),
+  });
+}
+
 export async function fetchPeriodLock() {
   return fetchJson<PeriodLockConfig>(`/api/settings/period-lock`);
 }
@@ -178,6 +225,12 @@ export async function fetchAccountStatement(
 export async function fetchWarehouseInventory(warehouseId: string) {
   return fetchJson<WarehouseInventoryReport>(
     `/api/master/warehouses/${warehouseId}/inventory`,
+  );
+}
+
+export async function fetchWarehouseDocumentMovements(warehouseId: string) {
+  return fetchJson<WarehouseDocumentMovementReport>(
+    `/api/master/warehouses/${warehouseId}/movements`,
   );
 }
 

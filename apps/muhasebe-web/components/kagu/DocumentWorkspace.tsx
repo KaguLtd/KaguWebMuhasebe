@@ -27,14 +27,21 @@ import { FieldInput } from "./FieldInput";
 import type { DocumentModuleConfig, FieldConfig } from "@/lib/kagu/config";
 import {
   approveDocumentRecord,
+  createMergedDeliveryNoteDraft,
   fetchDocumentDetail,
+  fetchDeliveryMergeCandidates,
   fetchDocuments,
   fetchInvoiceMetrics,
+  fetchInvoiceDeliveryNoteCandidates,
+  importDeliveryNoteToInvoice,
   saveDocumentDraft,
+  unmergeDeliveryNote,
   voidDocumentRecord,
 } from "@/lib/kagu/api";
 import type {
   DataRecord,
+  DeliveryMergeFlow,
+  DeliveryNoteCandidate,
   DocumentDetail,
   DocumentEntity,
   DocumentPayload,
@@ -83,6 +90,8 @@ export function DocumentWorkspace({
   const [invoiceMetrics, setInvoiceMetrics] = useState<InvoiceMetrics | null>(null);
   const [voidTarget, setVoidTarget] = useState<DataRecord | null>(null);
   const [voidReason, setVoidReason] = useState("");
+  const [mergeDrawerOpen, setMergeDrawerOpen] = useState(false);
+  const [invoiceImportOpen, setInvoiceImportOpen] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20 });
   const [filters, setFilters] = useState<ListQuery>({});
   const [total, setTotal] = useState(0);
@@ -94,6 +103,9 @@ export function DocumentWorkspace({
     | undefined;
   const watchedToAccountId = Form.useWatch("toAccountId", form) as string | undefined;
   const watchedInvoiceType = Form.useWatch("invoiceType", form) as
+    | string
+    | undefined;
+  const watchedInvoiceKind = Form.useWatch("invoiceKind", form) as
     | string
     | undefined;
   const selectedAccount = useMemo(
@@ -130,6 +142,12 @@ export function DocumentWorkspace({
   );
   const isRevisionMode = editing?.status === "APPROVED";
   const isHistoryView = editing?.status === "VOID" || editing?.status === "SUPERSEDED";
+  const lockedInvoiceKind =
+    module.entity === "invoices" && selectedAccount?.accountKind === "CUSTOMER"
+      ? "SALES"
+      : module.entity === "invoices" && selectedAccount?.accountKind === "SUPPLIER"
+        ? "PURCHASE"
+        : undefined;
 
   useEffect(() => {
     let active = true;
@@ -224,6 +242,12 @@ export function DocumentWorkspace({
     );
   }, [form, module.entity, watchedInvoiceType]);
 
+  useEffect(() => {
+    if (lockedInvoiceKind) {
+      form.setFieldValue("invoiceKind", lockedInvoiceKind);
+    }
+  }, [form, lockedInvoiceKind]);
+
   function openNewDraft() {
     setEditing(null);
     setDetail(null);
@@ -314,6 +338,20 @@ export function DocumentWorkspace({
     }
   }
 
+  async function unmergeRow(id: string) {
+    setLoading(true);
+
+    try {
+      await unmergeDeliveryNote(id);
+      message.success("Birlesim cozuldu");
+      setReloadKey((value) => value + 1);
+      void onDataChanged?.();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Birlesim cozulmedi");
+      setLoading(false);
+    }
+  }
+
   function handleTableChange(nextPagination: TablePaginationConfig) {
     setLoading(true);
     setPagination({
@@ -349,7 +387,9 @@ export function DocumentWorkspace({
       className="kagu-card"
       extra={
         <Space>
-          <Tag color="green">Belge engine aktif</Tag>
+          {module.entity === "deliveryNotes" ? (
+            <Button onClick={() => setMergeDrawerOpen(true)}>Irsaliye Birlestir</Button>
+          ) : null}
           <Button onClick={openNewDraft} type="primary">
             Yeni Taslak
           </Button>
@@ -358,12 +398,6 @@ export function DocumentWorkspace({
       title={module.title}
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <Alert
-          description="Taslak, onay ve iptal API'leri belge numarasi, ledger entry ve stock movement uretir. Bu ekran artik taslak formlarini da server engine'e gonderiyor."
-          showIcon
-          title="Legacy belge davranisi web server tarafina tasiniyor"
-          type="info"
-        />
         <DocumentListFilters
           availableProjects={availableFilterProjects}
           clearFilters={clearFilters}
@@ -414,6 +448,15 @@ export function DocumentWorkspace({
                   >
                     Iptal
                   </Button>
+                  {module.entity === "deliveryNotes" &&
+                  record.merge_role === "MERGED_RESULT" &&
+                  record.status === "APPROVED" &&
+                  record.is_effective !== false &&
+                  !record.invoiced_by_invoice_id ? (
+                    <Button onClick={() => unmergeRow(String(record.id))} size="small" type="link">
+                      Coz
+                    </Button>
+                  ) : null}
                 </Space>
               ),
               title: "",
@@ -431,7 +474,10 @@ export function DocumentWorkspace({
             total,
           }}
           rowClassName={(record) =>
-            record.status === "VOID" || record.status === "SUPERSEDED"
+            record.status === "VOID" ||
+            record.status === "SUPERSEDED" ||
+            record.merge_role === "MERGED_SOURCE" ||
+            Boolean(record.invoiced_by_invoice_id)
               ? "kagu-row-muted"
               : ""
           }
@@ -449,9 +495,9 @@ export function DocumentWorkspace({
           {isRevisionMode ? (
             <Alert
               description="Onayli belge dogrudan degistirilmez. Kayit, eski belgeyi etkisiz birakarak yeni bir revizyon taslagi olusturur."
-              message="Revizyon modundasiniz"
               showIcon
               style={{ marginBottom: 16 }}
+              title="Revizyon modundasiniz"
               type="warning"
             />
           ) : null}
@@ -467,9 +513,19 @@ export function DocumentWorkspace({
                 lockedCurrency={lockedCurrency}
                 lookups={lookups}
                 transferNeedsCrossRate={transferNeedsCrossRate}
+                lockedInvoiceKind={lockedInvoiceKind}
               />
             ))}
           </div>
+          {module.entity === "invoices" ? (
+            <Button
+              disabled={!watchedAccountId}
+              onClick={() => setInvoiceImportOpen(true)}
+              style={{ marginBottom: 16 }}
+            >
+              Irsaliye Aktar
+            </Button>
+          ) : null}
           {module.lineFields?.length ? (
             <>
               <Typography.Text className="kagu-section-kicker">
@@ -545,7 +601,274 @@ export function DocumentWorkspace({
           />
         </Space>
       </Modal>
+      {module.entity === "deliveryNotes" ? (
+        <DeliveryMergeDrawer
+          lookups={lookups}
+          onClose={() => setMergeDrawerOpen(false)}
+          onMerged={() => {
+            setMergeDrawerOpen(false);
+            setLoading(true);
+            setReloadKey((value) => value + 1);
+            void onDataChanged?.();
+          }}
+          open={mergeDrawerOpen}
+        />
+      ) : null}
+      {module.entity === "invoices" ? (
+        <InvoiceDeliveryImportDrawer
+          accountId={watchedAccountId}
+          form={form}
+          invoiceKind={watchedInvoiceKind}
+          lockedInvoiceKind={lockedInvoiceKind}
+          onClose={() => setInvoiceImportOpen(false)}
+          onImported={(detail) => {
+            form.resetFields();
+            form.setFieldsValue(toFormValues(module, detail.header, detail.lines));
+            setEditing(detail.header);
+            setDetail(detail);
+            setInvoiceMetrics(null);
+            setInvoiceImportOpen(false);
+            message.success("Irsaliye fatura taslagina aktarildi");
+          }}
+          open={invoiceImportOpen}
+          projectId={watchedProjectId}
+        />
+      ) : null}
     </Card>
+  );
+}
+
+function DeliveryMergeDrawer({
+  lookups,
+  onClose,
+  onMerged,
+  open,
+}: {
+  lookups: LookupMap;
+  onClose: () => void;
+  onMerged: () => void;
+  open: boolean;
+}) {
+  const { message } = App.useApp();
+  const [candidates, setCandidates] = useState<DeliveryNoteCandidate[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [flow, setFlow] = useState<DeliveryMergeFlow>("SALES_OUT");
+  const [filters, setFilters] = useState<ListQuery>({});
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    fetchDeliveryMergeCandidates(filters)
+      .then(setCandidates)
+      .catch((error: unknown) =>
+        message.error(error instanceof Error ? error.message : "Adaylar alinamadi"),
+      )
+      .finally(() => setLoading(false));
+  }, [filters, message, open]);
+
+  const selectedRows = candidates.filter((row) => selectedIds.includes(String(row.id)));
+  const preview = buildMergePreview(selectedRows, flow, lookups);
+
+  async function submit() {
+    setLoading(true);
+    try {
+      await createMergedDeliveryNoteDraft(selectedIds, flow);
+      message.success("B-Irsaliye taslagi olusturuldu");
+      setSelectedIds([]);
+      onMerged();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Birlesim basarisiz");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Drawer destroyOnHidden onClose={onClose} open={open} size="min(1180px, 98vw)" title="Irsaliye Birlestir">
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Space wrap>
+          <Select
+            allowClear
+            onChange={(value) => setFilters((current) => ({ ...current, accountId: value }))}
+            optionFilterProp="label"
+            options={selectableLookupOptions(lookups.accounts)}
+            placeholder="Cari"
+            showSearch
+            style={{ minWidth: 220 }}
+          />
+          <Select
+            allowClear
+            onChange={(value) => setFilters((current) => ({ ...current, projectId: value }))}
+            optionFilterProp="label"
+            options={selectableLookupOptions(lookups.projects)}
+            placeholder="Proje"
+            showSearch
+            style={{ minWidth: 220 }}
+          />
+          <Select
+            allowClear
+            onChange={(value) => setFilters((current) => ({ ...current, warehouseId: value }))}
+            optionFilterProp="label"
+            options={selectableLookupOptions(lookups.warehouses)}
+            placeholder="Depo"
+            showSearch
+            style={{ minWidth: 200 }}
+          />
+          <Select
+            onChange={(value) => setFlow(value)}
+            options={[
+              { label: "Satis / proje cikisi netlestirme", value: "SALES_OUT" },
+              { label: "Alim / tedarikci girisi netlestirme", value: "PURCHASE_IN" },
+            ]}
+            style={{ minWidth: 260 }}
+            value={flow}
+          />
+        </Space>
+        <Table<DeliveryNoteCandidate>
+          columns={[
+            { dataIndex: "doc_no", key: "doc_no", title: "Evrak No" },
+            {
+              dataIndex: "account_id",
+              key: "account_id",
+              render: (value) => findLookup(lookups.accounts, value)?.label ?? String(value),
+              title: "Cari",
+            },
+            { dataIndex: "direction", key: "direction", title: "Yon" },
+            {
+              dataIndex: "is_return",
+              key: "is_return",
+              render: (value) => (value ? <Tag color="orange">Iade</Tag> : "-"),
+              title: "Iade",
+            },
+            { dataIndex: "doc_date", key: "doc_date", title: "Tarih" },
+            { dataIndex: "line_count", key: "line_count", title: "Satir" },
+          ]}
+          dataSource={candidates}
+          loading={loading}
+          pagination={{ pageSize: 8 }}
+          rowKey={(record) => String(record.id)}
+          rowSelection={{
+            onChange: (keys) => setSelectedIds(keys.map(String)),
+            selectedRowKeys: selectedIds,
+          }}
+          size="small"
+        />
+        <Typography.Text className="kagu-section-kicker">Birlesim Onizleme</Typography.Text>
+        <Table
+          columns={[
+            { dataIndex: "itemLabel", key: "itemLabel", title: "Malzeme" },
+            { dataIndex: "quantity", key: "quantity", title: "Net Miktar" },
+          ]}
+          dataSource={preview}
+          locale={{ emptyText: <Empty description="Secim yok" /> }}
+          pagination={false}
+          rowKey="itemId"
+          size="small"
+        />
+        <Space className="kagu-drawer-actions">
+          <Button onClick={onClose}>Vazgec</Button>
+          <Button disabled={selectedIds.length < 2} loading={loading} onClick={submit} type="primary">
+            B-Irsaliye Taslagi Olustur
+          </Button>
+        </Space>
+      </Space>
+    </Drawer>
+  );
+}
+
+function InvoiceDeliveryImportDrawer({
+  accountId,
+  form,
+  invoiceKind,
+  lockedInvoiceKind,
+  onClose,
+  onImported,
+  open,
+  projectId,
+}: {
+  accountId?: string;
+  form: ReturnType<typeof Form.useForm<DocumentFormValues>>[0];
+  invoiceKind?: string;
+  lockedInvoiceKind?: "SALES" | "PURCHASE";
+  onClose: () => void;
+  onImported: (detail: DocumentDetail<DataRecord>) => void;
+  open: boolean;
+  projectId?: string;
+}) {
+  const { message } = App.useApp();
+  const [candidates, setCandidates] = useState<DeliveryNoteCandidate[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !accountId) {
+      return;
+    }
+
+    fetchInvoiceDeliveryNoteCandidates({ accountId, projectId })
+      .then(setCandidates)
+      .catch((error: unknown) =>
+        message.error(error instanceof Error ? error.message : "Irsaliyeler alinamadi"),
+      )
+      .finally(() => setLoading(false));
+  }, [accountId, message, open, projectId]);
+
+  async function submit() {
+    if (!selectedId) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const values = form.getFieldsValue(true);
+      const detail = await importDeliveryNoteToInvoice(selectedId, {
+        ...values,
+        invoiceKind: lockedInvoiceKind ?? invoiceKind,
+      });
+      onImported(detail);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Irsaliye aktarilamadi");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Drawer destroyOnHidden onClose={onClose} open={open} size="min(900px, 96vw)" title="Faturaya Irsaliye Aktar">
+      <Table<DeliveryNoteCandidate>
+        columns={[
+          { dataIndex: "doc_no", key: "doc_no", title: "Evrak No" },
+          { dataIndex: "direction", key: "direction", title: "Yon" },
+          {
+            dataIndex: "merge_role",
+            key: "merge_role",
+            render: (value, record) => renderDeliveryRoleTag(record, String(value)),
+            title: "Tip",
+          },
+          { dataIndex: "doc_date", key: "doc_date", title: "Tarih" },
+          { dataIndex: "line_count", key: "line_count", title: "Satir" },
+        ]}
+        dataSource={candidates}
+        loading={loading}
+        pagination={{ pageSize: 8 }}
+        rowKey={(record) => String(record.id)}
+        rowSelection={{
+          onChange: (keys) => setSelectedId(keys.length ? String(keys[0]) : null),
+          selectedRowKeys: selectedId ? [selectedId] : [],
+          type: "radio",
+        }}
+        size="small"
+      />
+      <Space className="kagu-drawer-actions">
+        <Button onClick={onClose}>Vazgec</Button>
+        <Button disabled={!selectedId} loading={loading} onClick={submit} type="primary">
+          Aktar
+        </Button>
+      </Space>
+    </Drawer>
   );
 }
 
@@ -824,12 +1147,14 @@ function DocumentPostingDetail({
 function DocumentHeaderField({
   availableProjects,
   field,
+  lockedInvoiceKind,
   lockedCurrency,
   lookups,
   transferNeedsCrossRate,
 }: {
   availableProjects: LookupItem[];
   field: FieldConfig;
+  lockedInvoiceKind?: "SALES" | "PURCHASE";
   lockedCurrency?: Currency;
   lookups: LookupMap;
   transferNeedsCrossRate: boolean;
@@ -868,6 +1193,18 @@ function DocumentHeaderField({
     return (
       <Form.Item label={field.label} name={field.name} rules={rules}>
         <Select disabled={Boolean(lockedCurrency)} options={options} />
+      </Form.Item>
+    );
+  }
+
+  if (field.name === "invoiceKind" && field.type === "select") {
+    const options = lockedInvoiceKind
+      ? [{ label: lockedInvoiceKind === "SALES" ? "Satis" : "Alis", value: lockedInvoiceKind }]
+      : field.options;
+
+    return (
+      <Form.Item label={field.label} name={field.name} rules={rules}>
+        <Select disabled={Boolean(lockedInvoiceKind)} options={options} />
       </Form.Item>
     );
   }
@@ -1132,6 +1469,10 @@ function renderDocumentCell(
     return <Tag color={color}>{humanizeEnum(value)}</Tag>;
   }
 
+  if (key === "merge_role") {
+    return renderDeliveryRoleTag(record, String(value ?? "NORMAL"));
+  }
+
   if (typeof value === "boolean") {
     return formatBoolean(value);
   }
@@ -1141,6 +1482,59 @@ function renderDocumentCell(
   }
 
   return value ? String(value) : "-";
+}
+
+function renderDeliveryRoleTag(record: DataRecord, value: string) {
+  if (record.invoiced_by_invoice_id) {
+    return <Tag color="cyan">F-Irsaliye</Tag>;
+  }
+
+  if (value === "MERGED_RESULT") {
+    return <Tag color="blue">B-Irsaliye</Tag>;
+  }
+
+  if (value === "MERGED_SOURCE") {
+    return <Tag color="gold">K-Irsaliye</Tag>;
+  }
+
+  return <Tag>Normal</Tag>;
+}
+
+function buildMergePreview(
+  rows: DeliveryNoteCandidate[],
+  flow: DeliveryMergeFlow,
+  lookups: LookupMap,
+) {
+  const byItem = new Map<string, number>();
+
+  for (const row of rows) {
+    for (const line of row.lines ?? []) {
+      const itemId = String(line.item_id ?? "");
+      const quantity = Number(line.quantity ?? 0);
+      const signed =
+        flow === "SALES_OUT"
+          ? row.direction === "OUT" && !row.is_return
+            ? quantity
+            : row.direction === "IN" && row.is_return
+              ? -quantity
+              : 0
+          : row.direction === "IN" && !row.is_return
+            ? quantity
+            : row.direction === "OUT" && row.is_return
+              ? -quantity
+              : 0;
+
+      byItem.set(itemId, (byItem.get(itemId) ?? 0) + signed);
+    }
+  }
+
+  return Array.from(byItem.entries())
+    .filter(([, quantity]) => Math.abs(quantity) > 0.000001)
+    .map(([itemId, quantity]) => ({
+      itemId,
+      itemLabel: findLookup(lookups.items, itemId)?.label ?? itemId,
+      quantity: formatQuantity(quantity),
+    }));
 }
 
 function defaultDocumentValues(module: DocumentModuleConfig): DocumentFormValues {
@@ -1227,6 +1621,13 @@ function toFormValues(
         next[field.name] = fromStoredValue(field, line[camelToSnake(field.name)]);
       }
 
+      if (module.entity === "invoices") {
+        next.deliveryNoteLineId = line.delivery_note_line_id ?? undefined;
+        next.sourceDeliveryLineIds = Array.isArray(line.source_delivery_line_ids)
+          ? line.source_delivery_line_ids
+          : [];
+      }
+
       return next;
     });
   }
@@ -1298,6 +1699,14 @@ function prepareDocumentPayload(
 
       if (module.entity === "deliveryNotes" && context.lockedCurrency) {
         next.currency = context.lockedCurrency;
+      }
+
+      if (module.entity === "invoices") {
+        next.deliveryNoteLineId =
+          typeof line.deliveryNoteLineId === "string" ? line.deliveryNoteLineId : undefined;
+        next.sourceDeliveryLineIds = Array.isArray(line.sourceDeliveryLineIds)
+          ? line.sourceDeliveryLineIds.map(String)
+          : [];
       }
 
       return next;

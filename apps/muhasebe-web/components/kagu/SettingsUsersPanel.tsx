@@ -173,8 +173,8 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
   if (mode === "roles") {
     return (
       <Card className="kagu-card">
-        <Space direction="vertical" size={16} style={{ width: "100%" }}>
-          <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={0}>
             <Typography.Text className="kagu-section-kicker">
               Settings
             </Typography.Text>
@@ -184,8 +184,8 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
           </Space>
           <Alert
             description="Rol ekrani draft durumda. Bu sekme simdilik backend'den gelen rol sozlugunu gorunur kilar; detayli izin matrisi ayri bir iterasyonda acilacak."
-            message="Yetki matrisi hazirlaniyor"
             showIcon
+            title="Yetki matrisi hazirlaniyor"
             type="info"
           />
           <Table<SettingsRole>
@@ -248,7 +248,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
         </Space>
       }
       title={
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Typography.Text className="kagu-section-kicker">
             Settings
           </Typography.Text>
@@ -258,12 +258,12 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
         </Space>
       }
     >
-      <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Typography.Paragraph style={{ marginBottom: 0 }}>
           Kullanici kayitlari, rol atamalari ve aktiflik durumu bu panelden
           yonetilir.
         </Typography.Paragraph>
-        {error ? <Alert message={error} showIcon type="warning" /> : null}
+        {error ? <Alert showIcon title={error} type="warning" /> : null}
         <Input.Search
           allowClear
           onChange={(event) => setSearch(event.target.value)}

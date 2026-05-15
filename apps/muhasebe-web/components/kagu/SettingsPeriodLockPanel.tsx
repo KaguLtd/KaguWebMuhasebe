@@ -121,7 +121,7 @@ export function SettingsPeriodLockPanel({
         </Space>
       }
       title={
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Typography.Text className="kagu-section-kicker">
             Settings
           </Typography.Text>
@@ -131,18 +131,18 @@ export function SettingsPeriodLockPanel({
         </Space>
       }
     >
-      <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Alert
           description="Yonetici burada belirlenen tarihten onceki onayli belgelerin degistirilmesini, iptalini ve revizyonunu kapatabilir."
-          message="Operasyonel donem kilidi"
           showIcon
+          title="Operasyonel donem kilidi"
           type="info"
         />
         {error ? (
           <Alert
             description={error}
-            message="Donem kilidi yuklenemedi"
             showIcon
+            title="Donem kilidi yuklenemedi"
             type="warning"
           />
         ) : null}
@@ -168,7 +168,7 @@ export function SettingsPeriodLockPanel({
             <DatePicker format="YYYY-MM-DD" style={{ width: "100%" }} />
           </Form.Item>
         </Form>
-        <Space direction="vertical" size={4}>
+        <Space orientation="vertical" size={4}>
           <Typography.Text>
             Son degistiren: {config?.updatedByUserId ?? "-"}
           </Typography.Text>

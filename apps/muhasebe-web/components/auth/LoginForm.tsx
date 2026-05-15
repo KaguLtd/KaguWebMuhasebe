@@ -49,10 +49,10 @@ export function LoginForm({ authMessage, nextPath }: LoginFormProps) {
           ayarlar yonetimi icin ortak giris noktasi olarak calisir.
         </div>
         {authMessage ? (
-          <Alert message={authMessage} showIcon type="warning" />
+          <Alert showIcon title={authMessage} type="warning" />
         ) : null}
         {errorMessage ? (
-          <Alert message={errorMessage} showIcon type="error" />
+          <Alert showIcon title={errorMessage} type="error" />
         ) : null}
         <label className="grid gap-2 text-sm">
           <span className="font-medium">Kullanici Adi</span>

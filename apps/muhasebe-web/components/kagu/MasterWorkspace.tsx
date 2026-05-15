@@ -32,12 +32,14 @@ import type {
   MasterEntity,
   SaveMasterPayload,
   WarehouseInventoryReport,
+  WarehouseDocumentMovementReport,
 } from "@/lib/kagu/contracts";
 import {
   fetchAccountStatement,
   fetchItemMovements,
   fetchMasters,
   fetchNextMasterCode,
+  fetchWarehouseDocumentMovements,
   fetchWarehouseInventory,
   saveMasterRecord,
 } from "@/lib/kagu/api";
@@ -57,7 +59,9 @@ type LookupMap = Partial<Record<LookupEntity, LookupItem[]>>;
 type MasterDetailReport =
   | AccountStatementReport
   | WarehouseInventoryReport
+  | WarehouseDocumentMovementReport
   | ItemMovementReport;
+type WarehouseDetailMode = "stock" | "documents";
 
 interface MasterWorkspaceProps {
   config: MasterModuleConfig;
@@ -88,6 +92,7 @@ export function MasterWorkspace({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailReport, setDetailReport] = useState<MasterDetailReport | null>(null);
   const [detailRecord, setDetailRecord] = useState<DataRecord | null>(null);
+  const [warehouseDetailMode, setWarehouseDetailMode] = useState<WarehouseDetailMode>("stock");
   const [lastSuggestedCode, setLastSuggestedCode] = useState<string | null>(null);
   const [statementRange, setStatementRange] = useState<[Dayjs, Dayjs]>(() => [
     dayjs().startOf("month"),
@@ -191,7 +196,7 @@ export function MasterWorkspace({
     }
   }
 
-  async function openDetailRecord(record: DataRecord) {
+  async function openDetailRecord(record: DataRecord, mode: WarehouseDetailMode = "stock") {
     const id = typeof record.id === "string" ? record.id : null;
 
     if (!id || !supportsDetail(config.entity)) {
@@ -200,11 +205,12 @@ export function MasterWorkspace({
 
     setDetailReport(null);
     setDetailRecord(record);
+    setWarehouseDetailMode(mode);
     setDetailLoading(true);
     setDetailOpen(true);
 
     try {
-      const report = await fetchMasterDetail(config.entity, id, statementRange);
+      const report = await fetchMasterDetail(config.entity, id, statementRange, mode);
 
       setDetailReport(report);
     } catch (error) {
@@ -348,7 +354,16 @@ export function MasterWorkspace({
                 <Button type="link" onClick={() => openExistingRecord(record)}>
                   Duzenle
                 </Button>
-                {hasDetail ? (
+                {hasDetail && config.entity === "warehouses" ? (
+                  <>
+                    <Button type="link" onClick={() => openDetailRecord(record, "stock")}>
+                      Stok
+                    </Button>
+                    <Button type="link" onClick={() => openDetailRecord(record, "documents")}>
+                      Evrak Hareketleri
+                    </Button>
+                  </>
+                ) : hasDetail ? (
                   <Button type="link" onClick={() => openDetailRecord(record)}>
                     Hareket
                   </Button>
@@ -410,6 +425,7 @@ export function MasterWorkspace({
           onReloadAccountStatement={reloadAccountStatement}
           report={detailReport}
           statementRange={statementRange}
+          warehouseDetailMode={warehouseDetailMode}
           setStatementRange={setStatementRange}
         />
       </Drawer>
@@ -477,6 +493,7 @@ function MasterDetailPane({
   report,
   statementRange,
   setStatementRange,
+  warehouseDetailMode,
 }: {
   entity: MasterEntity;
   loading: boolean;
@@ -485,6 +502,7 @@ function MasterDetailPane({
   report: MasterDetailReport | null;
   statementRange: [Dayjs, Dayjs];
   setStatementRange: (range: [Dayjs, Dayjs]) => void;
+  warehouseDetailMode: WarehouseDetailMode;
 }) {
   if (loading) {
     return (
@@ -574,7 +592,7 @@ function MasterDetailPane({
     );
   }
 
-  if (entity === "warehouses" && "warehouse" in report) {
+  if (entity === "warehouses" && "warehouse" in report && warehouseDetailMode === "stock") {
     return (
       <Space orientation="vertical" size={14} style={{ width: "100%" }}>
         <Typography.Text className="kagu-section-kicker">
@@ -595,10 +613,51 @@ function MasterDetailPane({
               title: "Miktar",
             },
           ]}
-          dataSource={report.rows}
+          dataSource={(report as WarehouseInventoryReport).rows}
           locale={{ emptyText: <Empty description="Bu depoda hareket yok" /> }}
           pagination={false}
           rowKey="itemId"
+          size="small"
+        />
+      </Space>
+    );
+  }
+
+  if (entity === "warehouses" && "warehouse" in report && "rows" in report) {
+    return (
+      <Space orientation="vertical" size={14} style={{ width: "100%" }}>
+        <Typography.Text className="kagu-section-kicker">Evrak Hareketleri</Typography.Text>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {recordTitle(report.warehouse)}
+        </Typography.Title>
+        <Table
+          columns={[
+            { dataIndex: "docDate", key: "docDate", title: "Tarih" },
+            { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
+            { dataIndex: "docType", key: "docType", title: "Belge Tipi" },
+            { dataIndex: "accountLabel", key: "accountLabel", title: "Cari" },
+            { dataIndex: "projectLabel", key: "projectLabel", title: "Proje" },
+            { dataIndex: "itemName", key: "itemName", title: "Malzeme" },
+            {
+              dataIndex: "qtyIn",
+              key: "qtyIn",
+              render: (value: unknown) => formatQuantity(value),
+              title: "Giris",
+            },
+            {
+              dataIndex: "qtyOut",
+              key: "qtyOut",
+              render: (value: unknown) => formatQuantity(value),
+              title: "Cikis",
+            },
+            { dataIndex: "status", key: "status", title: "Durum" },
+            { dataIndex: "sourceRole", key: "sourceRole", title: "Rol" },
+          ]}
+          dataSource={(report as WarehouseDocumentMovementReport).rows}
+          locale={{ emptyText: <Empty description="Evrak hareketi yok" /> }}
+          pagination={{ pageSize: 12 }}
+          rowClassName={(record) => (record.isEffective === false ? "kagu-row-muted" : "")}
+          rowKey="id"
           size="small"
         />
       </Space>
@@ -764,6 +823,7 @@ function fetchMasterDetail(
   entity: MasterEntity,
   id: string,
   statementRange?: [Dayjs, Dayjs],
+  warehouseMode: WarehouseDetailMode = "stock",
 ) {
   if (entity === "accounts") {
     return fetchAccountStatement(id, {
@@ -773,7 +833,9 @@ function fetchMasterDetail(
   }
 
   if (entity === "warehouses") {
-    return fetchWarehouseInventory(id);
+    return warehouseMode === "documents"
+      ? fetchWarehouseDocumentMovements(id)
+      : fetchWarehouseInventory(id);
   }
 
   if (entity === "items") {

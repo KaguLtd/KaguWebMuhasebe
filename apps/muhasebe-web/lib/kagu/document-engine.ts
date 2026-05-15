@@ -371,6 +371,9 @@ export function approveDocument(entity: DocumentEntity, id: string) {
   store.headers[entity][index] = nextHeader;
   unpostDocument(id);
   postDocument(entity, nextHeader, lines);
+  if (entity === "invoices") {
+    finalizeInvoiceDeliveryTransfer(nextHeader, lines);
+  }
 
   return getDocument(entity, id);
 }
@@ -406,6 +409,9 @@ export function voidDocument(entity: DocumentEntity, id: string, reason: string)
     void_reason: reason,
     voided_at: now,
   };
+  if (entity === "invoices") {
+    restoreDeliveryNotesFromVoidedInvoice(id);
+  }
   recordRevision(documentType(entity, header), id, reason);
 
   return getDocument(entity, id);
@@ -743,7 +749,7 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
     });
 
     if (header.warehouse_id) {
-      for (const line of lines.filter((line) => !hasDeliveryLink(line))) {
+      for (const line of lines) {
         store.stockMovements.push({
           cancelledAt: null,
           id: randomUUID(),
@@ -836,6 +842,73 @@ function unpostDocument(id: string) {
 
   store.ledgerEntries = store.ledgerEntries.filter((row) => row.docId !== id);
   store.stockMovements = store.stockMovements.filter((row) => row.docId !== id);
+}
+
+function finalizeInvoiceDeliveryTransfer(header: DataRecord, lines: DataRecord[]) {
+  const store = getDocumentStore();
+  const deliveryNoteIds = resolveDeliveryNoteIdsFromInvoiceLines(lines);
+
+  for (const deliveryNoteId of deliveryNoteIds) {
+    const index = store.headers.deliveryNotes.findIndex((row) => row.id === deliveryNoteId);
+    const deliveryNote = index >= 0 ? store.headers.deliveryNotes[index] : null;
+
+    if (!deliveryNote) {
+      continue;
+    }
+
+    store.headers.deliveryNotes[index] = {
+      ...deliveryNote,
+      invoiced_at: nowIso(),
+      invoiced_by_invoice_id: String(header.id),
+      is_effective: false,
+      updated_at: nowIso(),
+    };
+    for (const movement of store.stockMovements) {
+      if (movement.docId === deliveryNoteId && movement.isEffective) {
+        movement.cancelledAt = nowIso();
+        movement.isEffective = false;
+        movement.replacedByDocId = String(header.id);
+      }
+    }
+  }
+}
+
+function restoreDeliveryNotesFromVoidedInvoice(invoiceId: string) {
+  const store = getDocumentStore();
+
+  for (const [index, deliveryNote] of store.headers.deliveryNotes.entries()) {
+    if (deliveryNote.invoiced_by_invoice_id !== invoiceId) {
+      continue;
+    }
+
+    store.headers.deliveryNotes[index] = {
+      ...deliveryNote,
+      invoiced_at: null,
+      invoiced_by_invoice_id: null,
+      is_effective: true,
+      updated_at: nowIso(),
+    };
+    for (const movement of store.stockMovements) {
+      if (movement.docId === deliveryNote.id) {
+        movement.cancelledAt = null;
+        movement.isEffective = true;
+        movement.replacedByDocId = null;
+      }
+    }
+  }
+}
+
+function resolveDeliveryNoteIdsFromInvoiceLines(lines: DataRecord[]) {
+  const deliveryLineIds = new Set(lines.flatMap((line) => getStoredSourceDeliveryLineIds(line)));
+  const store = getDocumentStore();
+
+  return Array.from(
+    new Set(
+      store.lines.deliveryNotes
+        .filter((line) => deliveryLineIds.has(String(line.id)))
+        .map((line) => String(line.delivery_note_id)),
+    ),
+  );
 }
 
 function assertDeliveryNoteCanVoid(header: DataRecord) {

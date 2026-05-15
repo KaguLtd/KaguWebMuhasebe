@@ -367,6 +367,8 @@ model DeliveryNote {
   supersedesId     String?            @map("supersedes_id")
   supersededById   String?            @map("superseded_by_id")
   supersededAt     DateTime?          @map("superseded_at")
+  invoicedByInvoiceId String?          @map("invoiced_by_invoice_id")
+  invoicedAt       DateTime?          @map("invoiced_at")
   changeNote       String?            @map("change_note")
   changedByUserId  String?            @map("changed_by_user_id")
   description      String?
@@ -380,6 +382,7 @@ model DeliveryNote {
   warehouse        Warehouse          @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   supersedes       DeliveryNote?      @relation("DeliveryNoteSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
   supersededBy     DeliveryNote?      @relation("DeliveryNoteSupersededBy", fields: [supersededById], references: [id], onDelete: SetNull)
+  invoicedByInvoice Invoice?           @relation("DeliveryNoteInvoicedByInvoice", fields: [invoicedByInvoiceId], references: [id], onDelete: SetNull)
   changedByUser    User?              @relation("DeliveryNoteChangedByUser", fields: [changedByUserId], references: [id], onDelete: SetNull)
   supersedingNotes DeliveryNote[]     @relation("DeliveryNoteSupersedes")
   supersededNotes  DeliveryNote[]     @relation("DeliveryNoteSupersededBy")
@@ -392,6 +395,7 @@ model DeliveryNote {
   @@index([isEffective, status])
   @@index([supersedesId])
   @@index([supersededById])
+  @@index([invoicedByInvoiceId])
   @@index([changedByUserId])
   @@map("delivery_notes")
 }
@@ -455,6 +459,7 @@ model Invoice {
   changedByUser       User?          @relation("InvoiceChangedByUser", fields: [changedByUserId], references: [id], onDelete: SetNull)
   supersedingInvoices Invoice[]      @relation("InvoiceSupersedes")
   supersededInvoices  Invoice[]      @relation("InvoiceSupersededBy")
+  invoicedDeliveryNotes DeliveryNote[] @relation("DeliveryNoteInvoicedByInvoice")
   lines               InvoiceLine[]
 
   @@index([accountId])
