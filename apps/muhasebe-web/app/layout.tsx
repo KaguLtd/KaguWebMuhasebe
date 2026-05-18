@@ -3,8 +3,8 @@ import "antd/dist/reset.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "KAGU Muhasebe Web",
-  description: "Kucuk ve orta olcekli firmalar icin mini muhasebe ve operasyon paneli",
+  title: "KAGU Operasyon Paneli",
+  description: "Stok, cari, proje ve evrak takibi paneli",
 };
 
 export default function RootLayout({

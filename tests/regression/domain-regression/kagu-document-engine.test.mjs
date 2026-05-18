@@ -366,7 +366,7 @@ test("invoice lines linked to delivery lines move stock effect from delivery to 
   assert.equal(restoredDelivery.header.invoiced_by_invoice_id, invoice.header.id);
 });
 
-test("account balances and item stock are derived from posted movements", () => {
+test("account balances and item stock are derived from effective posted movements", () => {
   const accountId = "account-derived-balance";
   const itemId = "item-derived-stock";
   const receipt = engine.saveDocumentDraft("receipts", {
@@ -397,7 +397,7 @@ test("account balances and item stock are derived from posted movements", () => 
   engine.approveDocument("receipts", receipt.header.id);
   engine.approveDocument("invoices", invoice.header.id);
 
-  assert.equal(engine.getAccountBalanceMinor(accountId), -4400);
+  assert.equal(engine.getAccountBalanceMinor(accountId), 3600);
   assert.equal(engine.getItemStockQuantity(itemId), -3);
 });
 

@@ -17,10 +17,19 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
+import {
+  CopyOutlined,
+  DeleteOutlined,
+  LinkOutlined,
+  LockOutlined,
+  PlusOutlined,
+} from "@ant-design/icons";
 import type { TablePaginationConfig } from "antd";
 import dayjs from "dayjs";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldInput } from "./FieldInput";
@@ -54,9 +63,13 @@ import type {
 import {
   camelToSnake,
   formatBoolean,
+  formatDate,
+  formatDateTime,
+  formatMoneyInput,
   formatMinor,
   formatQuantity,
   humanizeEnum,
+  parseFormattedMoneyInput,
   parseMoneyToMinor,
   relationLookupByColumn,
   selectableLookupOptions,
@@ -353,6 +366,17 @@ export function DocumentWorkspace({
     }
   }
 
+  async function approveCurrentDraft() {
+    const id = typeof editing?.id === "string" ? editing.id : null;
+
+    if (!id) {
+      return;
+    }
+
+    await approveRow(id);
+    setDrawerOpen(false);
+  }
+
   async function voidRow(id: string, reason: string) {
     if (voidInFlightRef.current) {
       return;
@@ -446,6 +470,7 @@ export function DocumentWorkspace({
           updateFilters={updateFilters}
         />
         <Table<DataRecord>
+          className="kagu-main-table"
           columns={[
             ...module.columns.map((column) => ({
               dataIndex: column.key,
@@ -453,8 +478,10 @@ export function DocumentWorkspace({
               render: (value: unknown, record: DataRecord) =>
                 renderDocumentCell(column.key, value, record, lookups),
               title: column.title,
+              width: documentListColumnWidth(column.key),
             })),
             {
+              fixed: "right",
               key: "actions",
               render: (_value: unknown, record: DataRecord) => (
                 <Space>
@@ -522,74 +549,63 @@ export function DocumentWorkspace({
               : ""
           }
           rowKey={(record) => String(record.id)}
+          scroll={{ x: "max-content" }}
+          size="small"
         />
       </Space>
       <Drawer
         destroyOnHidden
         onClose={() => setDrawerOpen(false)}
         open={drawerOpen}
-        size="min(1080px, 98vw)"
+        size={documentDrawerSize(module.entity)}
         title={editing ? `${module.title} Taslak` : `${module.title} Yeni Taslak`}
       >
         <Form disabled={isHistoryView || isLockedMergeDraft} form={form} layout="vertical">
           {isRevisionMode ? (
             <Alert
-              description="Onayli belge dogrudan degistirilmez. Kayit, eski belgeyi etkisiz birakarak yeni bir revizyon taslagi olusturur."
               showIcon
               style={{ marginBottom: 16 }}
-              title="Revizyon modundasiniz"
+              title="Onayli belge icin revizyon taslagi acilir."
               type="warning"
             />
           ) : null}
           {isHistoryView && editing?.status === "APPROVED" ? (
             <Alert
-              description="Fatura edilmis, birlesmis veya birlesim kaynagi irsaliyeler dogrudan degistirilemez ve revize edilemez."
               showIcon
               style={{ marginBottom: 16 }}
-              title="Salt okunur irsaliye"
+              title="Faturalanmis veya birlesime bagli irsaliye degistirilemez."
               type="info"
             />
           ) : null}
           {isLockedMergeDraft ? (
             <Alert
-              description="B-Irsaliye taslagi kaynak irsaliyelerden hesaplanir. Satir ve baslik degerleri elle degistirilemez; uygun degilse taslak iptal edilip birlesim yeniden olusturulmalidir."
               showIcon
               style={{ marginBottom: 16 }}
-              title="Kilitli B-Irsaliye taslagi"
+              title="Kilitli B-Irsaliye taslagi kaynaklardan hesaplanir."
               type="info"
             />
           ) : null}
-          <Typography.Text className="kagu-section-kicker">
-            Belge Basligi
-          </Typography.Text>
-          <div className="kagu-document-form-grid">
-            {module.headerFields.map((field) => (
-              <DocumentHeaderField
-                availableProjects={availableProjects}
-                field={field}
-                key={field.name}
-                lockedCurrency={lockedCurrency}
-                lockedDeliveryDirection={lockedDeliveryDirection}
-                lookups={lookups}
-                transferNeedsCrossRate={transferNeedsCrossRate}
-                lockedInvoiceKind={lockedInvoiceKind}
-              />
-            ))}
-          </div>
+          <DocumentHeaderSections
+            availableProjects={availableProjects}
+            lockedCurrency={lockedCurrency}
+            lockedDeliveryDirection={lockedDeliveryDirection}
+            lockedInvoiceKind={lockedInvoiceKind}
+            lookups={lookups}
+            module={module}
+            transferNeedsCrossRate={transferNeedsCrossRate}
+          />
           {module.entity === "invoices" ? (
-            <Button
-              disabled={!watchedAccountId}
-              onClick={() => setInvoiceImportOpen(true)}
-              style={{ marginBottom: 16 }}
-            >
-              Irsaliye Aktar
-            </Button>
+            <DocumentFormSection title="Irsaliye Aktar">
+              <Space size={8} wrap>
+                <Button disabled={!watchedAccountId} onClick={() => setInvoiceImportOpen(true)}>
+                  Irsaliye Aktar
+                </Button>
+                <ImportedDeliveryNoteTag />
+              </Space>
+            </DocumentFormSection>
           ) : null}
           {module.lineFields?.length ? (
-            <>
-              <Typography.Text className="kagu-section-kicker">
-                Satirlar
-              </Typography.Text>
+            <DocumentFormSection title={module.entity === "deliveryNotes" ? "Malzeme Satirlari" : "Satirlar"}>
               <Form.List name="lines">
                 {(fields, { add, remove }) => (
                   <EditableLineTable
@@ -601,6 +617,7 @@ export function DocumentWorkspace({
                         }),
                       )
                     }
+                    copyLine={(line) => add(line)}
                     fields={fields}
                     invoiceType={watchedInvoiceType}
                     lineFields={module.lineFields ?? []}
@@ -612,29 +629,42 @@ export function DocumentWorkspace({
                   />
                 )}
               </Form.List>
-            </>
+              <DocumentDescriptionField entity={module.entity} />
+            </DocumentFormSection>
           ) : null}
           {isRevisionMode ? (
-            <Form.Item
-              label="Degisiklik Notu"
-              name="editReason"
-              rules={[{ required: true, message: "Degisiklik nedeni gerekli" }]}
-            >
-              <Input.TextArea
-                autoSize={{ minRows: 3 }}
-                placeholder="Bu degisiklik neden yapildi?"
-              />
-            </Form.Item>
+            <DocumentFormSection title="Revizyon Notu">
+              <Form.Item
+                label="Degisiklik Notu"
+                name="editReason"
+                rules={[{ required: true, message: "Degisiklik nedeni gerekli" }]}
+              >
+                <Input.TextArea
+                  autoSize={{ minRows: 3 }}
+                  placeholder="Bu degisiklik neden yapildi?"
+                />
+              </Form.Item>
+            </DocumentFormSection>
           ) : null}
         </Form>
-        <Space className="kagu-drawer-actions">
-          <Button onClick={() => setDrawerOpen(false)}>Vazgec</Button>
-          {!isHistoryView && !isLockedMergeDraft ? (
-            <Button disabled={saving} loading={saving} onClick={handleSaveDraft} type="primary">
-              {isRevisionMode ? "Revizyon Taslagi Kaydet" : "Taslak Kaydet"}
-            </Button>
+        <DocumentFormSection title={module.entity === "invoices" ? "Toplam ve Aksiyon" : "Aksiyon"}>
+          {module.entity === "invoices" ? (
+            <InvoiceDraftTotals currency={lockedCurrency} form={form} />
           ) : null}
-        </Space>
+          <Space className="kagu-drawer-actions">
+            <Button onClick={() => setDrawerOpen(false)}>Vazgec</Button>
+            {!isHistoryView && !isLockedMergeDraft ? (
+              <Button disabled={saving} loading={saving} onClick={handleSaveDraft} type="primary">
+                {isRevisionMode ? "Revizyon Taslagi Kaydet" : "Taslak Kaydet"}
+              </Button>
+            ) : null}
+            {!isHistoryView && editing?.status === "DRAFT" ? (
+              <Button disabled={saving} loading={loading} onClick={() => void approveCurrentDraft()}>
+                Onayla
+              </Button>
+            ) : null}
+          </Space>
+        </DocumentFormSection>
         <DocumentPostingDetail detail={detail} invoiceMetrics={invoiceMetrics} />
       </Drawer>
       <Modal
@@ -762,7 +792,13 @@ function DeliveryMergeDrawer({
   }
 
   return (
-    <Drawer destroyOnHidden onClose={onClose} open={open} size="min(1180px, 98vw)" title="Irsaliye Birlestir">
+    <Drawer
+      destroyOnHidden
+      onClose={onClose}
+      open={open}
+      size="min(1520px, 95vw)"
+      title="Irsaliye Birlestir"
+    >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Space wrap>
           <Select
@@ -811,14 +847,14 @@ function DeliveryMergeDrawer({
               render: (value) => findLookup(lookups.accounts, value)?.label ?? String(value),
               title: "Cari",
             },
-            { dataIndex: "direction", key: "direction", title: "Yon" },
+            { dataIndex: "direction", key: "direction", title: "Hareket Yonu" },
             {
               dataIndex: "is_return",
               key: "is_return",
               render: (value) => (value ? <Tag color="orange">Iade</Tag> : "-"),
               title: "Iade",
             },
-            { dataIndex: "doc_date", key: "doc_date", title: "Tarih" },
+            { dataIndex: "doc_date", key: "doc_date", render: formatDate, title: "Tarih" },
             { dataIndex: "line_count", key: "line_count", title: "Satir" },
           ]}
           dataSource={visibleCandidates}
@@ -929,18 +965,24 @@ function InvoiceDeliveryImportDrawer({
   }
 
   return (
-    <Drawer destroyOnHidden onClose={onClose} open={open} size="min(900px, 96vw)" title="Faturaya Irsaliye Aktar">
+    <Drawer
+      destroyOnHidden
+      onClose={onClose}
+      open={open}
+      size="min(1520px, 95vw)"
+      title="Faturaya Irsaliye Aktar"
+    >
       <Table<DeliveryNoteCandidate>
         columns={[
           { dataIndex: "doc_no", key: "doc_no", title: "Evrak No" },
-          { dataIndex: "direction", key: "direction", title: "Yon" },
+          { dataIndex: "direction", key: "direction", title: "Hareket Yonu" },
           {
             dataIndex: "merge_role",
             key: "merge_role",
             render: (value, record) => renderDeliveryRoleTag(record, String(value)),
-            title: "Tip",
+            title: "Irsaliye Tipi",
           },
-          { dataIndex: "doc_date", key: "doc_date", title: "Tarih" },
+          { dataIndex: "doc_date", key: "doc_date", render: formatDate, title: "Tarih" },
           { dataIndex: "line_count", key: "line_count", title: "Satir" },
         ]}
         dataSource={candidates}
@@ -1062,7 +1104,7 @@ function DocumentListFilters({
           allowClear
           onChange={(value) => updateFilter("direction", value)}
           options={directionField.options}
-          placeholder="Yon"
+          placeholder="Hareket Yonu"
           style={{ width: 130 }}
           value={filters.direction}
         />
@@ -1078,7 +1120,7 @@ function DocumentListFilters({
         />
       ) : null}
       <DatePicker.RangePicker
-        format="YYYY-MM-DD"
+        format="DD.MM.YYYY"
         onChange={(dates) =>
           updateFilters({
             dateFrom: dates?.[0]?.format("YYYY-MM-DD") ?? undefined,
@@ -1109,13 +1151,30 @@ function DocumentPostingDetail({
   const currency =
     typeof detail.header.currency === "string" ? detail.header.currency : "TRY";
   const status = String(detail.header.status ?? "");
+  const sourceDeliverySummary = summarizeSourceDeliveryLinks(detail);
 
   return (
     <Space orientation="vertical" size={14} style={{ marginTop: 20, width: "100%" }}>
       <Typography.Text className="kagu-section-kicker">
-        Muhasebe / Stok Etkisi
+        Detay
       </Typography.Text>
-      <Card size="small" title="Belge Gecmisi">
+      <Card size="small" title="Belge Detayi">
+        <Descriptions column={2} size="small">
+          <Descriptions.Item label="Depo">
+            {String(detail.header.warehouse_id ?? "-")}
+          </Descriptions.Item>
+          <Descriptions.Item label="Fatura Baglantisi">
+            {formatInvoiceLink(detail.header)}
+          </Descriptions.Item>
+          <Descriptions.Item label="Kaynak Irsaliyeler" span={2}>
+            {sourceDeliverySummary}
+          </Descriptions.Item>
+          <Descriptions.Item label="Aciklama" span={2}>
+            {String(detail.header.description ?? "-")}
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
+      <Card size="small" title="Revizyon Gecmisi">
         <Descriptions column={2} size="small">
           <Descriptions.Item label="Durum">
             <Tag
@@ -1148,10 +1207,28 @@ function DocumentPostingDetail({
             {String(detail.header.changed_by_user_id ?? "-")}
           </Descriptions.Item>
           <Descriptions.Item label="Degistirilme Zamani">
-            {String(detail.header.superseded_at ?? detail.header.voided_at ?? "-")}
+            {formatDateTime(detail.header.superseded_at ?? detail.header.voided_at)}
           </Descriptions.Item>
         </Descriptions>
       </Card>
+      <Table
+        columns={[
+          { dataIndex: "doc_no", key: "doc_no", title: "Evrak No" },
+          { dataIndex: "status", key: "status", title: "Durum" },
+          { dataIndex: "change_note", key: "change_note", title: "Degisiklik Notu" },
+          {
+            dataIndex: "superseded_at",
+            key: "superseded_at",
+            render: formatDateTime,
+            title: "Tarih",
+          },
+        ]}
+        dataSource={detail.revisions}
+        locale={{ emptyText: <Empty description="Revizyon kaydi yok" /> }}
+        pagination={false}
+        rowKey={(record) => String(record.id)}
+        size="small"
+      />
       {invoiceMetrics ? (
         <Card size="small" title="Fatura Metrikleri">
           <Space wrap>
@@ -1213,7 +1290,7 @@ function DocumentPostingDetail({
           { dataIndex: "qtyOut", key: "qtyOut", title: "Cikis" },
         ]}
         dataSource={detail.stockMovements}
-        locale={{ emptyText: <Empty description="Stok hareketi yok" /> }}
+        locale={{ emptyText: <Empty description="Stok etkili evrak yok" /> }}
         pagination={false}
         rowClassName={(record) => (record.isEffective === false ? "kagu-row-muted" : "")}
         rowKey="id"
@@ -1221,7 +1298,7 @@ function DocumentPostingDetail({
       />
       <Table
         columns={[
-          { dataIndex: "createdAt", key: "createdAt", title: "Zaman" },
+          { dataIndex: "createdAt", key: "createdAt", render: formatDateTime, title: "Zaman" },
           { dataIndex: "action", key: "action", title: "Islem" },
           { dataIndex: "actorUserId", key: "actorUserId", title: "Kullanici" },
         ]}
@@ -1230,10 +1307,201 @@ function DocumentPostingDetail({
         pagination={false}
         rowKey="id"
         size="small"
-        title={() => "Kayit Izi"}
+        title={() => "Audit Bilgisi"}
       />
     </Space>
   );
+}
+
+function summarizeSourceDeliveryLinks(detail: DocumentDetail<DataRecord>) {
+  const ids = new Set<string>();
+
+  for (const line of detail.lines) {
+    const deliveryLineId = line.delivery_note_line_id;
+
+    if (typeof deliveryLineId === "string" && deliveryLineId.trim()) {
+      ids.add(deliveryLineId.trim());
+    }
+
+    if (Array.isArray(line.source_delivery_line_ids)) {
+      for (const id of line.source_delivery_line_ids) {
+        if (typeof id === "string" && id.trim()) {
+          ids.add(id.trim());
+        }
+      }
+    }
+  }
+
+  if (!ids.size) {
+    return "-";
+  }
+
+  return `${ids.size} kaynak satir`;
+}
+
+function formatInvoiceLink(header: DataRecord) {
+  const invoiceId = header.invoiced_by_invoice_id;
+
+  if (typeof invoiceId === "string" && invoiceId.trim()) {
+    return `Fatura ID: ${invoiceId}`;
+  }
+
+  const invoiceAt = header.invoiced_at;
+
+  if (typeof invoiceAt === "string" && invoiceAt.trim()) {
+    return `Faturalandi: ${invoiceAt}`;
+  }
+
+  return "-";
+}
+
+function DocumentHeaderSections({
+  availableProjects,
+  lockedCurrency,
+  lockedDeliveryDirection,
+  lockedInvoiceKind,
+  lookups,
+  module,
+  transferNeedsCrossRate,
+}: {
+  availableProjects: LookupItem[];
+  lockedCurrency?: Currency;
+  lockedDeliveryDirection?: "IN" | "OUT";
+  lockedInvoiceKind?: "SALES" | "PURCHASE";
+  lookups: LookupMap;
+  module: DocumentModuleConfig;
+  transferNeedsCrossRate: boolean;
+}) {
+  const sections = documentHeaderSections(module);
+
+  return (
+    <>
+      {sections.map((section) => {
+        const fields = section.fieldNames
+          .map((fieldName) => module.headerFields.find((field) => field.name === fieldName))
+          .filter((field): field is FieldConfig => Boolean(field));
+
+        if (!fields.length) {
+          return null;
+        }
+
+        return (
+          <DocumentFormSection key={section.title} title={section.title}>
+            <div className="kagu-document-form-grid">
+              {fields.map((field) => (
+                <DocumentHeaderField
+                  availableProjects={availableProjects}
+                  field={field}
+                  key={field.name}
+                  lockedCurrency={lockedCurrency}
+                  lockedDeliveryDirection={lockedDeliveryDirection}
+                  lockedInvoiceKind={lockedInvoiceKind}
+                  lookups={lookups}
+                  transferNeedsCrossRate={transferNeedsCrossRate}
+                />
+              ))}
+            </div>
+          </DocumentFormSection>
+        );
+      })}
+    </>
+  );
+}
+
+function DocumentFormSection({
+  children,
+  title,
+}: {
+  children: ReactNode;
+  title: string;
+}) {
+  return (
+    <section className="kagu-form-section">
+      <Typography.Text className="kagu-section-kicker">{title}</Typography.Text>
+      {children}
+    </section>
+  );
+}
+
+function ImportedDeliveryNoteTag() {
+  const form = Form.useFormInstance<DocumentFormValues>();
+  const lines = (Form.useWatch("lines", form) ?? []) as Array<Record<string, unknown>>;
+  const importedLineCount = lines.filter((line) => {
+    const singleId = typeof line.deliveryNoteLineId === "string" && line.deliveryNoteLineId.trim();
+    const sourceIds = Array.isArray(line.sourceDeliveryLineIds)
+      ? line.sourceDeliveryLineIds.length
+      : 0;
+
+    return Boolean(singleId || sourceIds);
+  }).length;
+
+  if (!importedLineCount) {
+    return <Tag>Aktarilan irsaliye yok</Tag>;
+  }
+
+  return <Tag color="cyan">{importedLineCount} satir irsaliyeden aktarildi</Tag>;
+}
+
+function InvoiceDraftTotals({
+  currency,
+  form,
+}: {
+  currency?: Currency;
+  form: ReturnType<typeof Form.useForm<DocumentFormValues>>[0];
+}) {
+  const lines = (Form.useWatch("lines", form) ?? []) as Array<Record<string, unknown>>;
+  const watchedCurrency = Form.useWatch("currency", form) as Currency | undefined;
+  const selectedCurrency = currency ?? watchedCurrency ?? "TRY";
+  const totals = calculateInvoiceDraftTotals(lines);
+
+  return (
+    <div className="kagu-total-row">
+      <span>Net {formatMinor(totals.netTotalMinor, selectedCurrency)}</span>
+      <span>KDV {formatMinor(totals.vatTotalMinor, selectedCurrency)}</span>
+      <strong>KDV Dahil Toplam {formatMinor(totals.grossTotalMinor, selectedCurrency)}</strong>
+    </div>
+  );
+}
+
+function DocumentDescriptionField({ entity }: { entity: DocumentEntity }) {
+  if (entity !== "invoices" && entity !== "deliveryNotes") {
+    return null;
+  }
+
+  return (
+    <Form.Item
+      className="kagu-document-description"
+      label={entity === "invoices" ? "Fatura Aciklamasi" : "Irsaliye Aciklamasi"}
+      name="description"
+    >
+      <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} />
+    </Form.Item>
+  );
+}
+
+function documentHeaderSections(module: DocumentModuleConfig) {
+  if (module.entity === "invoices") {
+    return [
+      { title: "Cari ve Proje", fieldNames: ["accountId", "projectId"] },
+      {
+        title: "Belge Bilgisi",
+        fieldNames: ["invoiceKind", "invoiceType", "docDate", "actualDocNo", "currency", "warehouseId"],
+      },
+    ];
+  }
+
+  if (module.entity === "deliveryNotes") {
+    return [
+      { title: "Cari ve Proje", fieldNames: ["accountId", "projectId"] },
+      { title: "Hareket", fieldNames: ["direction", "isReturn"] },
+      {
+        title: "Depo ve Belge Bilgisi",
+        fieldNames: ["warehouseId", "docDate", "actualDocNo"],
+      },
+    ];
+  }
+
+  return [{ title: "Belge Basligi", fieldNames: module.headerFields.map((field) => field.name) }];
 }
 
 function DocumentHeaderField({
@@ -1332,6 +1600,7 @@ function DocumentHeaderField({
         }
       >
         <InputNumber
+          controls={false}
           decimalSeparator=","
           disabled={!transferNeedsCrossRate}
           min={field.min}
@@ -1354,8 +1623,13 @@ function HiddenFormValue() {
   return null;
 }
 
+type LineColumn =
+  | { field: FieldConfig; kind: "field" }
+  | { kind: "net" | "source" | "total" | "unit" };
+
 function EditableLineTable({
   addLine,
+  copyLine,
   fields,
   invoiceType,
   lineFields,
@@ -1366,6 +1640,7 @@ function EditableLineTable({
   tableLocked = false,
 }: {
   addLine: () => void;
+  copyLine: (line: Record<string, unknown>) => void;
   fields: FormListField[];
   invoiceType?: string;
   lineFields: FieldConfig[];
@@ -1394,6 +1669,8 @@ function EditableLineTable({
     form.setFieldValue("lines", lines);
   }
 
+  const visibleLineColumns = resolveLineColumns(moduleEntity, lineFields);
+
   return (
     <Table<FormListField>
       className="kagu-line-table"
@@ -1420,68 +1697,158 @@ function EditableLineTable({
             </>
           ),
           title: "#",
-          width: 48,
+          width: 42,
         },
-        ...lineFields.map((lineField) => ({
-          key: lineField.name,
-          render: (_value: unknown, field: FormListField) => {
-            const linkedLine = moduleEntity === "invoices" && isLinkedInvoiceLine(field.name);
-            const readonlyField =
-              tableLocked ||
-              (linkedLine && (lineField.name === "itemId" || lineField.name === "quantity"));
+        ...visibleLineColumns.map((column) => {
+          if (column.kind === "unit") {
+            return {
+              key: "unit",
+              render: (_value: unknown, field: FormListField) => {
+                const line = watchedLines[field.name] ?? {};
+                const item = findLookup(lookups.items, line.itemId);
 
-            return (
-            <Form.Item
-              name={[field.name, lineField.name]}
-              rules={lineFieldRules(lineField, {
-                invoiceType,
-              })}
-              style={{ margin: 0 }}
-              valuePropName={lineField.type === "switch" ? "checked" : "value"}
-            >
-              {renderLineControl(lineField, lookups, {
-                invoiceType,
-                moduleEntity,
-                disabled: readonlyField,
-                onItemChange: (itemId) => {
-                  const item = findLookup(lookups.items, itemId);
-                  const vatRate = invoiceType === "STAR"
-                    ? 0
-                    : (item?.defaultVatRateBps ?? 0) / 100;
+                return <span className="kagu-line-readonly">{item?.unitLabel ?? "-"}</span>;
+              },
+              title: "Birim",
+              width: 90,
+            };
+          }
 
-                  setLineField(field.name, "vatRateBps", vatRate);
-                },
-                selectedAccountCurrency,
-              })}
-            </Form.Item>
-            );
-          },
-          title: lineField.label,
-          width: lineColumnWidth(lineField),
-        })),
+          if (column.kind === "net" || column.kind === "total") {
+            return {
+              className: "kagu-line-money-cell",
+              key: column.kind,
+              render: (_value: unknown, field: FormListField) => {
+                const totals = calculateInvoiceLineTotals(watchedLines[field.name] ?? {});
+                const amount =
+                  column.kind === "net" ? totals.netTotalMinor : totals.grossTotalMinor;
+
+                return <span className="kagu-money">{formatMinor(amount)}</span>;
+              },
+              title: column.kind === "net" ? "Net" : "Toplam",
+              width: 120,
+            };
+          }
+
+          if (column.kind === "source") {
+            return {
+              key: "source",
+              render: (_value: unknown, field: FormListField) => {
+                if (!isLinkedInvoiceLine(field.name)) {
+                  return <Tag>M</Tag>;
+                }
+
+                return (
+                  <Tag color="cyan">
+                    <Space size={4}>
+                      <LinkOutlined />
+                      <LockOutlined />
+                      Irs
+                    </Space>
+                  </Tag>
+                );
+              },
+              title: "Kaynak",
+              width: 76,
+            };
+          }
+
+          if (column.kind !== "field") {
+            return {
+              key: "unknown",
+              render: () => null,
+              title: "",
+              width: 1,
+            };
+          }
+
+          const lineField = column.field;
+
+          return {
+            className: isMoneyLikeLineField(lineField) ? "kagu-line-money-cell" : undefined,
+            key: lineField.name,
+            render: (_value: unknown, field: FormListField) => {
+              const linkedLine = moduleEntity === "invoices" && isLinkedInvoiceLine(field.name);
+              const readonlyField =
+                tableLocked ||
+                (linkedLine && (lineField.name === "itemId" || lineField.name === "quantity"));
+
+              return (
+                <Form.Item
+                  name={[field.name, lineField.name]}
+                  rules={lineFieldRules(lineField, {
+                    invoiceType,
+                  })}
+                  style={{ margin: 0 }}
+                  valuePropName={lineField.type === "switch" ? "checked" : "value"}
+                >
+                  {renderLineControl(lineField, lookups, {
+                    invoiceType,
+                    moduleEntity,
+                    disabled: readonlyField,
+                    onItemChange: (itemId) => {
+                      const item = findLookup(lookups.items, itemId);
+                      const vatRate = invoiceType === "STAR"
+                        ? 0
+                        : (item?.defaultVatRateBps ?? 0) / 100;
+
+                      setLineField(field.name, "vatRateBps", vatRate);
+                    },
+                    selectedAccountCurrency,
+                  })}
+                </Form.Item>
+              );
+            },
+            title: lineColumnTitle(lineField),
+            width: lineColumnWidth(lineField),
+          };
+        }),
         {
           fixed: "right",
           key: "actions",
-          render: (_value: unknown, field: FormListField) => (
-            <Button
-              danger
-              disabled={tableLocked || (moduleEntity === "invoices" && isLinkedInvoiceLine(field.name))}
-              onClick={() => removeLine(field.name)}
-              size="small"
-              type="link"
-            >
-              Sil
-            </Button>
-          ),
+          render: (_value: unknown, field: FormListField) => {
+            const linkedLine = moduleEntity === "invoices" && isLinkedInvoiceLine(field.name);
+            const line = watchedLines[field.name] ?? {};
+
+            return (
+              <Space size={2}>
+                <Tooltip title={linkedLine ? "Kilitli satir" : "Satiri kopyala"}>
+                  <Button
+                    disabled={tableLocked || linkedLine}
+                    icon={linkedLine ? <LockOutlined /> : <CopyOutlined />}
+                    onClick={() => copyLine(copyDocumentLine(line, moduleEntity))}
+                    size="small"
+                    type="text"
+                  />
+                </Tooltip>
+                <Tooltip title={linkedLine ? "Irsaliyeden gelen satir silinemez" : "Satiri sil"}>
+                  <Button
+                    danger
+                    disabled={tableLocked || linkedLine}
+                    icon={<DeleteOutlined />}
+                    onClick={() => removeLine(field.name)}
+                    size="small"
+                    type="text"
+                  />
+                </Tooltip>
+              </Space>
+            );
+          },
           title: "",
-          width: 72,
+          width: 82,
         },
       ]}
       dataSource={fields}
       footer={() => (
-        <Button disabled={tableLocked} onClick={addLine} type="dashed">
-          Satir Ekle
-        </Button>
+        <Tooltip title="Satir ekle">
+          <Button
+            disabled={tableLocked}
+            icon={<PlusOutlined />}
+            onClick={addLine}
+            size="small"
+            type="dashed"
+          />
+        </Tooltip>
       )}
       pagination={false}
       rowKey="key"
@@ -1489,6 +1856,67 @@ function EditableLineTable({
       size="small"
     />
   );
+}
+
+function resolveLineColumns(entity: DocumentEntity, lineFields: FieldConfig[]): LineColumn[] {
+  const fieldByName = new Map(lineFields.map((field) => [field.name, field]));
+  const fieldColumn = (name: string): LineColumn | null => {
+    const field = fieldByName.get(name);
+
+    return field ? { field, kind: "field" } : null;
+  };
+  const compactNames =
+    entity === "deliveryNotes"
+      ? ["itemId", "quantity"]
+      : ["itemId", "quantity", "unitPriceMinor", "vatRateBps"];
+  const columns = compactNames
+    .map(fieldColumn)
+    .filter((column): column is LineColumn => Boolean(column));
+
+  if (entity === "deliveryNotes") {
+    const itemIndex = columns.findIndex(
+      (column) => column.kind === "field" && column.field.name === "quantity",
+    );
+
+    columns.splice(Math.max(0, itemIndex + 1), 0, { kind: "unit" });
+    return columns;
+  }
+
+  if (entity === "invoices") {
+    const quantityIndex = columns.findIndex(
+      (column) => column.kind === "field" && column.field.name === "quantity",
+    );
+
+    columns.splice(Math.max(0, quantityIndex + 1), 0, { kind: "unit" });
+    columns.push({ kind: "net" }, { kind: "total" }, { kind: "source" });
+  }
+
+  return columns;
+}
+
+function copyDocumentLine(line: Record<string, unknown>, entity: DocumentEntity) {
+  const next = { ...line };
+
+  delete next.id;
+
+  if (entity === "invoices") {
+    delete next.deliveryNoteLineId;
+    next.sourceDeliveryLineIds = [];
+  }
+
+  return next;
+}
+
+function lineColumnTitle(field: FieldConfig) {
+  if (field.name === "unitPriceMinor") {
+    return "Fiyat";
+  }
+
+  return field.label;
+}
+
+function isMoneyLikeLineField(field: FieldConfig) {
+  return field.moneyMinor || field.name === "vatRateBps";
 }
 
 function renderLineControl(
@@ -1515,6 +1943,7 @@ function renderLineControl(
             label: item.label,
             value: (item.rateBps ?? 0) / 100,
           }))}
+        size="small"
       />
     );
   }
@@ -1538,22 +1967,27 @@ function renderLineControl(
             : undefined
         }
         options={options}
-        showSearch
         optionFilterProp="label"
+        showSearch
+        size="small"
       />
     );
   }
 
   if (field.type === "text") {
-    return <Input disabled={context.disabled} />;
+    return <Input disabled={context.disabled} size="small" />;
   }
 
   return (
     <InputNumber
+      controls={false}
       decimalSeparator=","
       disabled={context.disabled}
+      formatter={field.moneyMinor ? formatMoneyInput : undefined}
       min={field.min}
+      parser={field.moneyMinor ? parseFormattedMoneyInput : undefined}
       precision={field.moneyMinor ? 2 : undefined}
+      size="small"
       step={field.step ?? (field.moneyMinor ? 0.01 : 1)}
       style={{ width: "100%" }}
     />
@@ -1575,22 +2009,22 @@ function lineFieldRules(
 
 function lineColumnWidth(field: FieldConfig) {
   if (field.lookupEntity === "items") {
-    return 260;
+    return 360;
   }
 
   if (field.name === "description") {
-    return 220;
+    return 240;
   }
 
   if (field.moneyMinor) {
-    return 150;
+    return 126;
   }
 
   if (field.type === "select") {
-    return 150;
+    return 118;
   }
 
-  return 130;
+  return 118;
 }
 
 function renderDocumentCell(
@@ -1610,6 +2044,10 @@ function renderDocumentCell(
 
   if (key.endsWith("_minor")) {
     return <span className="kagu-money">{formatMinor(value, rowCurrency)}</span>;
+  }
+
+  if (key.includes("date")) {
+    return formatDate(value);
   }
 
   if (key === "status") {
@@ -1673,6 +2111,79 @@ function canReviseDeliveryNote(record: DataRecord | null | undefined) {
     !record.superseded_by_id &&
     String(record.merge_role ?? "NORMAL") === "NORMAL"
   );
+}
+
+function documentDrawerSize(entity: DocumentEntity) {
+  if (entity === "deliveryNotes" || entity === "invoices") {
+    return "min(1440px, 90vw)";
+  }
+
+  return "min(760px, 90vw)";
+}
+
+function documentListColumnWidth(key: string) {
+  if (key.includes("account") || key.includes("project")) {
+    return 220;
+  }
+
+  if (key.includes("actual_doc_no")) {
+    return 160;
+  }
+
+  if (key.includes("doc_no")) {
+    return 140;
+  }
+
+  if (key.includes("date")) {
+    return 116;
+  }
+
+  if (key === "status") {
+    return 112;
+  }
+
+  if (key === "direction" || key === "is_return" || key.includes("type") || key.includes("kind")) {
+    return 118;
+  }
+
+  if (key.includes("minor")) {
+    return 140;
+  }
+
+  return 132;
+}
+
+function calculateInvoiceDraftTotals(lines: Array<Record<string, unknown>>) {
+  return lines.reduce<{
+    grossTotalMinor: number;
+    netTotalMinor: number;
+    vatTotalMinor: number;
+  }>(
+    (totals, line) => {
+      const lineTotals = calculateInvoiceLineTotals(line);
+
+      return {
+        grossTotalMinor: totals.grossTotalMinor + lineTotals.grossTotalMinor,
+        netTotalMinor: totals.netTotalMinor + lineTotals.netTotalMinor,
+        vatTotalMinor: totals.vatTotalMinor + lineTotals.vatTotalMinor,
+      };
+    },
+    { grossTotalMinor: 0, netTotalMinor: 0, vatTotalMinor: 0 },
+  );
+}
+
+function calculateInvoiceLineTotals(line: Record<string, unknown>) {
+  const quantity = Number(line.quantity ?? 0);
+  const unitPriceMinor = Math.round(Number(line.unitPriceMinor ?? 0) * 100);
+  const vatRateBps = Math.round(Number(line.vatRateBps ?? 0) * 100);
+  const netTotalMinor = Math.round(quantity * unitPriceMinor);
+  const vatTotalMinor = Math.round(netTotalMinor * (vatRateBps / 10000));
+
+  return {
+    grossTotalMinor: netTotalMinor + vatTotalMinor,
+    netTotalMinor,
+    vatTotalMinor,
+  };
 }
 
 function renderDeliveryRoleTag(record: DataRecord, value: string) {
@@ -1903,6 +2414,13 @@ function prepareDocumentPayload(
       };
 
       for (const field of module.lineFields ?? []) {
+        if (
+          field.name === "description" &&
+          (module.entity === "deliveryNotes" || module.entity === "invoices")
+        ) {
+          continue;
+        }
+
         next[field.name] = toStoredValue(field, line[field.name]);
       }
 

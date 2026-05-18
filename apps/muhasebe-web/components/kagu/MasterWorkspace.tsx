@@ -46,6 +46,7 @@ import {
 import {
   camelToSnake,
   formatBoolean,
+  formatDate,
   formatMinor,
   formatQuantity,
   formatRateBps,
@@ -346,6 +347,7 @@ export function MasterWorkspace({
         ) : null}
       </Space>
       <Table<DataRecord>
+        className="kagu-main-table"
         columns={[
           ...config.columns.map((column) => ({
             dataIndex: column.key,
@@ -353,8 +355,10 @@ export function MasterWorkspace({
             title: column.title,
             render: (value: unknown, record: DataRecord) =>
               renderCell(column.key, value, record, lookups),
+            width: masterListColumnWidth(column.key),
           })),
           {
+            fixed: "right",
             key: "actions",
             render: (_value: unknown, record: DataRecord) => (
               <Space>
@@ -364,21 +368,21 @@ export function MasterWorkspace({
                 {hasDetail && config.entity === "warehouses" ? (
                   <>
                     <Button type="link" onClick={() => openDetailRecord(record, "stock")}>
-                      Stok
+                      Mevcut Stok
                     </Button>
                     <Button type="link" onClick={() => openDetailRecord(record, "documents")}>
-                      Evrak Hareketleri
+                      Stok Etkili Evraklar
                     </Button>
                   </>
                 ) : hasDetail ? (
                   <Button type="link" onClick={() => openDetailRecord(record)}>
-                    Hareket
+                    {config.entity === "accounts" ? "Cari Ekstre" : "Stok Etkili Evraklar"}
                   </Button>
                 ) : null}
               </Space>
             ),
             title: "",
-            width: hasDetail ? 170 : 92,
+            width: hasDetail ? 220 : 96,
           },
         ]}
         dataSource={rows}
@@ -391,13 +395,14 @@ export function MasterWorkspace({
           total,
         }}
         rowKey={(record) => String(record.id)}
-        size="middle"
+        scroll={{ x: "max-content" }}
+        size="small"
       />
       <Drawer
         destroyOnHidden
         onClose={() => setDrawerOpen(false)}
         open={drawerOpen}
-        size="min(720px, 96vw)"
+        size={masterDrawerSize(config.entity)}
         title={editing ? `${config.title} Duzenle` : `${config.title} Yeni`}
       >
         <Form form={form} layout="vertical">
@@ -423,7 +428,11 @@ export function MasterWorkspace({
         onClose={() => setDetailOpen(false)}
         open={detailOpen}
         size="min(900px, 96vw)"
-        title={`${config.title} Hareketleri`}
+        title={
+          config.entity === "accounts"
+            ? `${config.title} Hareketleri`
+            : `${config.title} Stok Etkili Evraklar`
+        }
       >
         <MasterDetailPane
           entity={config.entity}
@@ -492,6 +501,38 @@ function MasterFieldInput({
   return <FieldInput field={field} lookups={lookups} />;
 }
 
+function masterDrawerSize(entity: MasterEntity) {
+  if (entity === "items" || entity === "projects") {
+    return "min(760px, 90vw)";
+  }
+
+  return "min(640px, 90vw)";
+}
+
+function masterListColumnWidth(key: string) {
+  if (key === "name" || key.includes("account") || key.includes("item")) {
+    return 240;
+  }
+
+  if (key === "code") {
+    return 150;
+  }
+
+  if (key.includes("label") || key.includes("class")) {
+    return 180;
+  }
+
+  if (key === "is_active" || key === "status") {
+    return 112;
+  }
+
+  if (key.includes("stock") || key.includes("balance") || key.includes("minor") || key.includes("bps")) {
+    return 140;
+  }
+
+  return 132;
+}
+
 function MasterDetailPane({
   entity,
   loading,
@@ -520,7 +561,7 @@ function MasterDetailPane({
   }
 
   if (!report) {
-    return <Empty description="Hareket bulunamadi" />;
+    return <Empty description="Kayit bulunamadi" />;
   }
 
   if (entity === "accounts" && "closingBalanceMinor" in report) {
@@ -536,7 +577,7 @@ function MasterDetailPane({
         </Typography.Title>
         <Space wrap>
           <DatePicker.RangePicker
-            format="YYYY-MM-DD"
+            format="DD.MM.YYYY"
             onChange={(value) => {
               if (value?.[0] && value[1]) {
                 const nextRange: [Dayjs, Dayjs] = [value[0], value[1]];
@@ -567,7 +608,7 @@ function MasterDetailPane({
         </Space>
         <Table
           columns={[
-            { dataIndex: "docDate", key: "docDate", title: "Tarih" },
+            { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih" },
             { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
             { dataIndex: "description", key: "description", title: "Aciklama" },
             {
@@ -603,7 +644,7 @@ function MasterDetailPane({
     return (
       <Space orientation="vertical" size={14} style={{ width: "100%" }}>
         <Typography.Text className="kagu-section-kicker">
-          Depo Stok Durumu
+          Depo Mevcut Stok
         </Typography.Text>
         <Typography.Title level={4} style={{ margin: 0 }}>
           {recordTitle(report.warehouse)}
@@ -621,7 +662,7 @@ function MasterDetailPane({
             },
           ]}
           dataSource={(report as WarehouseInventoryReport).rows}
-          locale={{ emptyText: <Empty description="Bu depoda hareket yok" /> }}
+          locale={{ emptyText: <Empty description="Bu depoda mevcut stok yok" /> }}
           pagination={false}
           rowKey="itemId"
           size="small"
@@ -633,15 +674,15 @@ function MasterDetailPane({
   if (entity === "warehouses" && "warehouse" in report && "rows" in report) {
     return (
       <Space orientation="vertical" size={14} style={{ width: "100%" }}>
-        <Typography.Text className="kagu-section-kicker">Evrak Hareketleri</Typography.Text>
+        <Typography.Text className="kagu-section-kicker">Stok Etkili Evraklar</Typography.Text>
         <Typography.Title level={4} style={{ margin: 0 }}>
           {recordTitle(report.warehouse)}
         </Typography.Title>
         <Table
           columns={[
-            { dataIndex: "docDate", key: "docDate", title: "Tarih" },
+            { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih" },
             { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
-            { dataIndex: "docType", key: "docType", title: "Belge Tipi" },
+            { dataIndex: "docType", key: "docType", title: "Evrak Tipi" },
             { dataIndex: "accountLabel", key: "accountLabel", title: "Cari" },
             { dataIndex: "projectLabel", key: "projectLabel", title: "Proje" },
             { dataIndex: "itemName", key: "itemName", title: "Malzeme" },
@@ -666,7 +707,7 @@ function MasterDetailPane({
             },
           ]}
           dataSource={(report as WarehouseDocumentMovementReport).rows}
-          locale={{ emptyText: <Empty description="Evrak hareketi yok" /> }}
+          locale={{ emptyText: <Empty description="Stok etkili evrak yok" /> }}
           pagination={{ pageSize: 12 }}
           rowClassName={(record) => (record.isEffective === false ? "kagu-row-muted" : "")}
           rowKey="id"
@@ -680,14 +721,14 @@ function MasterDetailPane({
     return (
       <Space orientation="vertical" size={14} style={{ width: "100%" }}>
         <Typography.Text className="kagu-section-kicker">
-          Malzeme Hareketleri
+          Malzeme Stok Etkili Evraklari
         </Typography.Text>
         <Typography.Title level={4} style={{ margin: 0 }}>
           {recordTitle(report.item)}
         </Typography.Title>
         <Table
           columns={[
-            { dataIndex: "docDate", key: "docDate", title: "Tarih" },
+            { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih" },
             { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
             { dataIndex: "warehouseName", key: "warehouseName", title: "Depo" },
             {
@@ -704,7 +745,7 @@ function MasterDetailPane({
             },
           ]}
           dataSource={report.rows}
-          locale={{ emptyText: <Empty description="Malzeme hareketi yok" /> }}
+          locale={{ emptyText: <Empty description="Stok etkili evrak yok" /> }}
           pagination={false}
           rowKey="id"
           size="small"
@@ -713,7 +754,7 @@ function MasterDetailPane({
     );
   }
 
-  return <Empty description="Bu kart icin hareket raporu hazir degil" />;
+  return <Empty description="Bu kart icin stok etkili evrak raporu hazir degil" />;
 }
 
 function renderCell(
@@ -733,6 +774,10 @@ function renderCell(
 
   if (key.endsWith("_minor")) {
     return <span className="kagu-money">{formatMinor(value, rowCurrency)}</span>;
+  }
+
+  if (key.includes("date") || key.endsWith("_at")) {
+    return formatDate(value);
   }
 
   if (key === "rate_bps" || key.endsWith("_bps")) {

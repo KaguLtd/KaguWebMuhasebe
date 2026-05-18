@@ -166,14 +166,26 @@ export function getAllStockMovements() {
 
 export function getAccountBalanceMinor(accountId: string) {
   return getDocumentStore().ledgerEntries
-    .filter((entry) => entry.accountId === accountId)
+    .filter(
+      (entry) =>
+        entry.accountId === accountId &&
+        entry.isEffective !== false &&
+        isInvoiceLedgerDocType(entry.docType),
+    )
     .reduce((balance, entry) => balance + entry.debitMinor - entry.creditMinor, 0);
 }
 
 export function getItemStockQuantity(itemId: string) {
   return getDocumentStore().stockMovements
-    .filter((movement) => movement.itemId === itemId)
+    .filter((movement) => movement.itemId === itemId && movement.isEffective !== false)
     .reduce((quantity, movement) => quantity + movement.qtyIn - movement.qtyOut, 0);
+}
+
+function isInvoiceLedgerDocType(docType: string) {
+  return docType === "SALES_INVOICE_STANDARD" ||
+    docType === "SALES_INVOICE_STAR" ||
+    docType === "PURCHASE_INVOICE_STANDARD" ||
+    docType === "PURCHASE_INVOICE_STAR";
 }
 
 export function getInvoiceMetrics(invoiceId: string): InvoiceMetrics | null {
@@ -657,7 +669,7 @@ function validateApproval(entity: DocumentEntity, header: DataRecord, lines: Dat
   }
 
   if (["deliveryNotes", "invoices"].includes(entity) && !String(header.actual_doc_no ?? "").trim()) {
-    throw new Error("Gercek evrak numarasi zorunludur");
+    throw new Error("Harici evrak numarasi zorunludur");
   }
 
   if (["deliveryNotes", "invoices"].includes(entity) && lines.length === 0) {

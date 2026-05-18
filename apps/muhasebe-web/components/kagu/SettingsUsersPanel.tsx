@@ -28,6 +28,7 @@ import {
   fetchSettingsUsers,
   updateSettingsUser,
 } from "@/lib/kagu/api";
+import { formatDateTime } from "@/lib/kagu/helpers";
 
 interface SettingsUsersPanelProps {
   mode: "users" | "roles";
@@ -189,13 +190,8 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
               Roller
             </Typography.Title>
           </Space>
-          <Alert
-            description="Rol ekrani draft durumda. Bu sekme simdilik backend'den gelen rol sozlugunu gorunur kilar; detayli izin matrisi ayri bir iterasyonda acilacak."
-            showIcon
-            title="Yetki matrisi hazirlaniyor"
-            type="info"
-          />
           <Table<SettingsRole>
+            className="kagu-main-table"
             columns={[
               {
                 dataIndex: "name",
@@ -223,7 +219,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
               {
                 dataIndex: "isSystem",
                 key: "isSystem",
-                title: "Tip",
+                title: "Rol Tipi",
                 render: (value: boolean | undefined) => (
                   <Tag color={value ? "gold" : "default"}>
                     {value ? "Sistem" : "Ozel"}
@@ -237,6 +233,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
             locale={{ emptyText: <Empty description="Rol kaydi bulunamadi" /> }}
             pagination={false}
             rowKey="id"
+            size="small"
           />
         </Space>
       </Card>
@@ -266,10 +263,6 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <Typography.Paragraph style={{ marginBottom: 0 }}>
-          Kullanici kayitlari, rol atamalari ve aktiflik durumu bu panelden
-          yonetilir.
-        </Typography.Paragraph>
         {error ? <Alert showIcon title={error} type="warning" /> : null}
         <Input.Search
           allowClear
@@ -278,6 +271,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
           value={search}
         />
         <Table<SettingsUser>
+          className="kagu-main-table"
           columns={[
             {
               dataIndex: "username",
@@ -333,6 +327,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
               width: 180,
             },
             {
+              fixed: "right",
               key: "actions",
               render: (_value: unknown, user: SettingsUser) => (
                 <Button onClick={() => openEditDrawer(user)} type="link">
@@ -348,6 +343,8 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
           locale={{ emptyText: <Empty description="Kullanici kaydi bulunamadi" /> }}
           pagination={{ pageSize: 10 }}
           rowKey="id"
+          scroll={{ x: "max-content" }}
+          size="small"
         />
       </Space>
       <Drawer
@@ -461,17 +458,4 @@ function resolveUserActive(user: SettingsUser) {
   }
 
   return user.status?.toUpperCase() !== "PASSIVE";
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("tr-TR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
 }

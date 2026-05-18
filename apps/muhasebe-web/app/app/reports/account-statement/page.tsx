@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { StatementPrintButton } from "@/components/kagu/StatementPrintButton";
-import { formatMinor } from "@/lib/kagu/helpers";
+import { formatDate, formatMinor } from "@/lib/kagu/helpers";
 import { getDbAccountStatementReport } from "@/lib/kagu/report-repository";
 
 type PageProps = {
@@ -46,7 +46,7 @@ export default async function AccountStatementPrintPage({
             <p className="kagu-section-kicker">KAGU Cari Ekstre</p>
             <h1>{accountTitle}</h1>
             <p>
-              Tarih araligi: {params.dateFrom ?? "-"} / {params.dateTo ?? "-"}
+              Tarih araligi: {formatDate(params.dateFrom)} / {formatDate(params.dateTo)}
             </p>
           </div>
           <div className="kagu-print-actions">
@@ -72,7 +72,7 @@ export default async function AccountStatementPrintPage({
           <tbody>
             {report.rows.map((row) => (
               <tr key={row.id}>
-                <td>{row.docDate}</td>
+                <td>{formatDate(row.docDate)}</td>
                 <td>{row.docNo}</td>
                 <td>{row.description ?? "-"}</td>
                 <td>{formatMinor(row.debitMinor, currency)}</td>

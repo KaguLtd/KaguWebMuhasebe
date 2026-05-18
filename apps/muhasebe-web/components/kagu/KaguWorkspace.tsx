@@ -226,8 +226,8 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
             <div className="kagu-brand">
               <span className="kagu-brand-mark">K</span>
               <div>
-                <strong>KAGU Panel</strong>
-                <span>Mini Muhasebe</span>
+                <strong>KAGU Operasyon Paneli</strong>
+                <span>Stok • Cari • Proje • Evrak Takibi</span>
               </div>
             </div>
             <Menu
@@ -244,9 +244,6 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
           <Layout>
             <Header className="kagu-header">
               <div>
-                <Typography.Text className="kagu-header-eyebrow">
-                  KAGU mini muhasebe operasyon merkezi
-                </Typography.Text>
                 <Typography.Title level={4} style={{ color: "white", margin: 0 }}>
                   {workspaceMenu.find((item) => item.key === activeMenu)?.title}
                 </Typography.Title>
@@ -342,7 +339,7 @@ function DashboardPane({ bootstrap }: { bootstrap: BootstrapPayload | null }) {
         </Col>
         <Col lg={6} md={12} xs={24}>
           <CurrencyBreakdownCard
-            title="Stok Toplamlari"
+            title="Mevcut Stok"
             totals={bootstrap?.dashboard.inventoryTotalByCurrency}
           />
         </Col>

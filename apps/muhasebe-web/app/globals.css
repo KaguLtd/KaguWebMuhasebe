@@ -179,6 +179,27 @@ input {
   max-width: 420px;
 }
 
+.kagu-main-table .ant-table-thead > tr > th,
+.kagu-main-table .ant-table-tbody > tr > td {
+  padding: 7px 10px;
+}
+
+.kagu-main-table .ant-table-thead > tr > th {
+  white-space: nowrap;
+}
+
+.kagu-main-table .ant-table-cell-fix-right,
+.kagu-main-table .ant-table-cell-fix-right-first,
+.kagu-main-table .ant-table-tbody > tr > td.ant-table-cell-fix-right,
+.kagu-main-table .ant-table-tbody > tr > td.ant-table-cell-fix-right-first {
+  background: #fcfaf6 !important;
+}
+
+.kagu-main-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+.kagu-main-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first {
+  background: #f7f2ea !important;
+}
+
 .kagu-money {
   color: #4f453a;
   font-variant-numeric: tabular-nums;
@@ -188,15 +209,26 @@ input {
 .kagu-drawer-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 18px;
   width: 100%;
+}
+
+.kagu-form-section {
+  display: grid;
+  gap: 10px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+
+.kagu-form-section:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .kagu-document-form-grid {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 10px 0 18px;
+  margin: 0;
 }
 
 .kagu-document-line-grid {
@@ -219,15 +251,93 @@ input {
 }
 
 .kagu-line-table {
-  margin-top: 10px;
+  margin-top: 0;
+}
+
+.kagu-document-description {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.kagu-line-table .ant-table-thead > tr > th,
+.kagu-line-table .ant-table-tbody > tr > td {
+  padding: 5px 8px;
 }
 
 .kagu-line-table .ant-table-cell {
   vertical-align: top;
 }
 
+.kagu-line-table .ant-form-item {
+  margin-bottom: 0;
+}
+
+.kagu-line-table .ant-select-selector,
+.kagu-line-table .ant-input,
+.kagu-line-table .ant-input-number,
+.kagu-line-table .ant-btn {
+  min-height: 30px;
+}
+
+.kagu-line-readonly {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  color: var(--muted, #5a534d);
+}
+
+.kagu-line-money-cell {
+  text-align: right;
+}
+
+.kagu-line-money-cell .ant-form-item-control-input-content {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.kagu-line-money-cell .ant-input-number,
+.kagu-line-money-cell .ant-select {
+  max-width: 126px;
+}
+
+.kagu-line-money-cell .ant-input-number-input {
+  text-align: right;
+}
+
 .kagu-row-muted > td {
   opacity: 0.58;
+}
+
+.kagu-total-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  justify-self: end;
+  margin-left: auto;
+  max-width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.kagu-total-row span,
+.kagu-total-row strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  margin-left: 10px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  white-space: nowrap;
+}
+
+.kagu-total-row span:first-child {
+  margin-left: 0;
+}
+
+.kagu-total-row strong {
+  border-color: rgba(31, 107, 55, 0.26);
+  background: rgba(31, 107, 55, 0.08);
+  color: var(--success);
 }
 
 .kagu-print-page {

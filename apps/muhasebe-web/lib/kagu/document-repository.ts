@@ -1256,7 +1256,7 @@ function validateApproval(entity: DocumentEntity, header: DataRecord, lines: Dat
     ["deliveryNotes", "invoices"].includes(entity) &&
     !String(header.actual_doc_no ?? "").trim()
   ) {
-    throw new Error("Gercek evrak numarasi zorunludur");
+    throw new Error("Harici evrak numarasi zorunludur");
   }
 
   if (["deliveryNotes", "invoices"].includes(entity) && lines.length === 0) {

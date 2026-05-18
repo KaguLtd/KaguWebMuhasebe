@@ -129,7 +129,7 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
 
   if (entity === "items") {
     const rows = await prisma.item.findMany({
-      include: { defaultVatRate: true },
+      include: { defaultVatRate: true, unit: true },
       orderBy: { code: "asc" },
     });
 
@@ -139,6 +139,7 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
       id: row.id,
       isActive: row.isActive,
       label: `${row.code} - ${row.name}`,
+      unitLabel: row.unit.name,
     }));
   }
 
@@ -723,7 +724,7 @@ async function assertCanSetActiveState(
       const stock = await getWarehouseStockQuantity(text(existing.id), tx);
 
       if (Math.abs(stock) > 0.000001) {
-        throw new Error("Stok bulunan depo pasife alinamaz");
+        throw new Error("Mevcut stogu olan depo pasife alinamaz");
       }
 
       const draftCount = await Promise.all([
@@ -790,14 +791,19 @@ async function listCodes(entity: MasterEntity, tx: Tx = prisma) {
 }
 
 async function getAccountBalanceMinor(accountId: string, tx: Tx = prisma) {
+  const where = {
+    accountId,
+    docType: { in: INVOICE_LEDGER_DOC_TYPES },
+    isEffective: true,
+  };
   const [debit, credit] = await Promise.all([
     tx.accountLedgerEntry.aggregate({
       _sum: { debitMinor: true },
-      where: { accountId },
+      where,
     }),
     tx.accountLedgerEntry.aggregate({
       _sum: { creditMinor: true },
-      where: { accountId },
+      where,
     }),
   ]);
 
@@ -806,8 +812,8 @@ async function getAccountBalanceMinor(accountId: string, tx: Tx = prisma) {
 
 async function getItemStockQuantity(itemId: string, tx: Tx = prisma) {
   const [qtyIn, qtyOut] = await Promise.all([
-    tx.stockMovement.aggregate({ _sum: { qtyIn: true }, where: { itemId } }),
-    tx.stockMovement.aggregate({ _sum: { qtyOut: true }, where: { itemId } }),
+    tx.stockMovement.aggregate({ _sum: { qtyIn: true }, where: { itemId, isEffective: true } }),
+    tx.stockMovement.aggregate({ _sum: { qtyOut: true }, where: { itemId, isEffective: true } }),
   ]);
 
   return number(qtyIn._sum.qtyIn) - number(qtyOut._sum.qtyOut);
@@ -815,12 +821,25 @@ async function getItemStockQuantity(itemId: string, tx: Tx = prisma) {
 
 async function getWarehouseStockQuantity(warehouseId: string, tx: Tx = prisma) {
   const [qtyIn, qtyOut] = await Promise.all([
-    tx.stockMovement.aggregate({ _sum: { qtyIn: true }, where: { warehouseId } }),
-    tx.stockMovement.aggregate({ _sum: { qtyOut: true }, where: { warehouseId } }),
+    tx.stockMovement.aggregate({
+      _sum: { qtyIn: true },
+      where: { warehouseId, isEffective: true },
+    }),
+    tx.stockMovement.aggregate({
+      _sum: { qtyOut: true },
+      where: { warehouseId, isEffective: true },
+    }),
   ]);
 
   return number(qtyIn._sum.qtyIn) - number(qtyOut._sum.qtyOut);
 }
+
+const INVOICE_LEDGER_DOC_TYPES = [
+  "SALES_INVOICE_STANDARD",
+  "SALES_INVOICE_STAR",
+  "PURCHASE_INVOICE_STANDARD",
+  "PURCHASE_INVOICE_STAR",
+];
 
 function buildAccountWhere(query: ListQuery): Prisma.AccountWhereInput {
   const search = normalizedSearch(query.search);

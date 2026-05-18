@@ -149,6 +149,18 @@ test("warehouse document movements and invoice candidates use go-live filters", 
   assert.match(workspaceSource, /next\.sourceDeliveryLineIds = deliveryNoteLineId/);
 });
 
+test("master aggregates use only effective invoice ledger and stock movements", async () => {
+  const source = await readFile(
+    new URL("../lib/kagu/master-repository.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /docType: \{ in: INVOICE_LEDGER_DOC_TYPES \}/);
+  assert.match(source, /isEffective: true/);
+  assert.match(source, /where: \{ itemId, isEffective: true \}/);
+  assert.match(source, /where: \{ warehouseId, isEffective: true \}/);
+});
+
 test("approved delivery note revision draft save should not reuse deliveryNoteLine ids", async () => {
   const { saveDbDocumentDraft } = await importAppModule("lib/kagu/document-repository.ts");
 

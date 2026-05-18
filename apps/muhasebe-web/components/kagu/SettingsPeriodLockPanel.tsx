@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { fetchPeriodLock, savePeriodLock } from "@/lib/kagu/api";
 import type { PeriodLockConfig } from "@/lib/kagu/contracts";
+import { formatDateTime } from "@/lib/kagu/helpers";
 
 interface PeriodLockFormValues {
   isActive: boolean;
@@ -140,9 +141,8 @@ export function SettingsPeriodLockPanel({
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Alert
-          description="Yonetici burada belirlenen tarihten onceki onayli belgelerin degistirilmesini, iptalini ve revizyonunu kapatabilir."
           showIcon
-          title="Operasyonel donem kilidi"
+          title="Kilit tarihinden onceki onayli belgeler kapatilir."
           type="info"
         />
         {error ? (
@@ -172,7 +172,7 @@ export function SettingsPeriodLockPanel({
               }),
             ]}
           >
-            <DatePicker format="YYYY-MM-DD" style={{ width: "100%" }} />
+            <DatePicker format="DD.MM.YYYY" style={{ width: "100%" }} />
           </Form.Item>
         </Form>
         <Space orientation="vertical" size={4}>
@@ -180,7 +180,7 @@ export function SettingsPeriodLockPanel({
             Son degistiren: {config?.updatedByUserId ?? "-"}
           </Typography.Text>
           <Typography.Text>
-            Son guncelleme: {config?.updatedAt ?? "-"}
+            Son guncelleme: {formatDateTime(config?.updatedAt)}
           </Typography.Text>
         </Space>
       </Space>

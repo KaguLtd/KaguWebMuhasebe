@@ -4,7 +4,11 @@ import { DatePicker, Form, Input, InputNumber, Select, Switch } from "antd";
 
 import type { FieldConfig } from "@/lib/kagu/config";
 import type { LookupEntity, LookupItem } from "@/lib/kagu/contracts";
-import { selectableLookupOptions } from "@/lib/kagu/helpers";
+import {
+  formatMoneyInput,
+  parseFormattedMoneyInput,
+  selectableLookupOptions,
+} from "@/lib/kagu/helpers";
 
 type LookupMap = Partial<Record<LookupEntity, LookupItem[]>>;
 
@@ -60,9 +64,12 @@ function renderControl(
   if (field.type === "number") {
     return (
       <InputNumber
+        controls={false}
         decimalSeparator=","
         disabled={disabled}
+        formatter={field.moneyMinor ? formatMoneyInput : undefined}
         min={field.min}
+        parser={field.moneyMinor ? parseFormattedMoneyInput : undefined}
         precision={field.moneyMinor ? 2 : undefined}
         step={field.step ?? (field.moneyMinor ? 0.01 : 1)}
         style={{ width: "100%" }}
@@ -71,7 +78,7 @@ function renderControl(
   }
 
   if (field.type === "date") {
-    return <DatePicker disabled={disabled} format="YYYY-MM-DD" style={{ width: "100%" }} />;
+    return <DatePicker disabled={disabled} format="DD.MM.YYYY" style={{ width: "100%" }} />;
   }
 
   if (field.type === "select") {

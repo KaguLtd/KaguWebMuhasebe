@@ -9,6 +9,20 @@ const moneyFormatter = new Intl.NumberFormat("tr-TR", {
   maximumFractionDigits: 2,
 });
 
+const dateFormatter = new Intl.DateTimeFormat("tr-TR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+const dateTimeFormatter = new Intl.DateTimeFormat("tr-TR", {
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
 export function camelToSnake(value: string) {
   return value.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`);
 }
@@ -44,6 +58,51 @@ export function parseMoneyToMinor(value: unknown) {
   const parsed = Number(normalized);
 
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
+}
+
+export function formatMoneyInput(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  const numberValue =
+    typeof value === "number" && Number.isFinite(value)
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : 0;
+
+  return moneyFormatter.format(Number.isFinite(numberValue) ? numberValue : 0);
+}
+
+export function parseFormattedMoneyInput(value: string | undefined) {
+  if (!value) {
+    return 0;
+  }
+
+  let normalized = value.trim().replace(/[^\d,.-]/g, "");
+
+  if (normalized.includes(",")) {
+    normalized = normalized.replace(/\./g, "").replace(",", ".");
+  } else if ((normalized.match(/\./g) ?? []).length > 1) {
+    normalized = normalized.replace(/\./g, "");
+  }
+
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function formatDate(value: unknown) {
+  const date = parseDateValue(value);
+
+  return date ? dateFormatter.format(date) : "-";
+}
+
+export function formatDateTime(value: unknown) {
+  const date = parseDateValue(value);
+
+  return date ? dateTimeFormatter.format(date) : "-";
 }
 
 export function formatRateBps(value: unknown) {
@@ -98,3 +157,20 @@ export const relationLookupByColumn: Partial<Record<string, LookupEntity>> = {
   class_id: "itemClasses",
   default_vat_rate_id: "vatRates",
 };
+
+function parseDateValue(value: unknown) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? `${value}T00:00:00`
+    : value;
+  const date = new Date(normalized);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}

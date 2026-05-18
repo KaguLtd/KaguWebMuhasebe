@@ -64,6 +64,7 @@ export interface LookupItem {
   accountCode?: string;
   rateBps?: number;
   defaultVatRateBps?: number;
+  unitLabel?: string | null;
 }
 
 export interface AppSnapshot {
