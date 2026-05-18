@@ -58,6 +58,39 @@ export function ProjectReportsWorkspace({ lookups }: { lookups: LookupMap }) {
     }
   };
 
+  function openProjectPrint() {
+    if (!projectId) {
+      return;
+    }
+
+    const [dateFrom, dateTo] = dateRange;
+    const params = new URLSearchParams({ projectId });
+    const routeByTab: Record<ReportTab, string> = {
+      invoices: "project-invoices",
+      margin: "project-estimated-margin",
+      stock: "project-stock-movements",
+      usage: "project-material-usage",
+    };
+
+    if (dateFrom) {
+      params.set("dateFrom", dateFrom);
+    }
+
+    if (dateTo) {
+      params.set("dateTo", dateTo);
+    }
+
+    if (warehouseId && activeTab !== "invoices" && activeTab !== "margin") {
+      params.set("warehouseId", warehouseId);
+    }
+
+    if (activeTab === "invoices") {
+      params.set("invoiceKind", invoiceKind);
+    }
+
+    window.open(`/app/reports/${routeByTab[activeTab]}?${params.toString()}`, "_blank");
+  }
+
   useEffect(() => {
     if (!projectId) {
       return;
@@ -176,6 +209,9 @@ export function ProjectReportsWorkspace({ lookups }: { lookups: LookupMap }) {
             }}
           >
             Temizle
+          </Button>
+          <Button disabled={!projectId} onClick={openProjectPrint} type="primary">
+            PDF / Yazdir
           </Button>
         </Space>
         <Tabs

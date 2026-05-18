@@ -22,6 +22,7 @@ import type { Dayjs } from "dayjs";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 
 import { FieldInput } from "./FieldInput";
+import { DocumentSourceRoleTag, DocumentStatusTag } from "./DocumentTags";
 import type { FieldConfig, MasterModuleConfig } from "@/lib/kagu/config";
 import type {
   AccountStatementReport,
@@ -50,7 +51,6 @@ import {
   formatMinor,
   formatQuantity,
   formatRateBps,
-  humanizeEnum,
   parseMoneyToMinor,
   relationLookupByColumn,
   selectableLookupOptions,
@@ -592,17 +592,17 @@ function MasterDetailPane({
             Cari Hareketleri
           </Button>
           <Button onClick={onOpenStatementPrint} type="primary">
-            Ekstre PDF
+            PDF / Yazdir
           </Button>
         </Space>
         <Space wrap>
-          <Tag color="blue">
+          <Tag className="kagu-tag kagu-tag-neutral">
             Borc {formatMinor(report.debitTotalMinor, currency)}
           </Tag>
-          <Tag color="gold">
+          <Tag className="kagu-tag kagu-tag-neutral">
             Alacak {formatMinor(report.creditTotalMinor, currency)}
           </Tag>
-          <Tag color="green">
+          <Tag className="kagu-tag kagu-tag-neutral">
             Bakiye {formatMinor(report.closingBalanceMinor, currency)}
           </Tag>
         </Space>
@@ -698,8 +698,24 @@ function MasterDetailPane({
               render: (value: unknown) => formatQuantity(value),
               title: "Cikis",
             },
-            { dataIndex: "status", key: "status", title: "Durum" },
-            { dataIndex: "sourceRole", key: "sourceRole", title: "Rol" },
+            {
+              dataIndex: "status",
+              key: "status",
+              render: (value: unknown, record: { isEffective?: boolean }) => (
+                <DocumentStatusTag muted={record.isEffective === false} status={value} />
+              ),
+              title: "Durum",
+            },
+            {
+              dataIndex: "sourceRole",
+              key: "sourceRole",
+              render: (value: unknown, record: { isEffective?: boolean }) =>
+                <DocumentSourceRoleTag
+                  muted={record.isEffective === false}
+                  sourceRole={value}
+                />,
+              title: "Rol",
+            },
             {
               dataIndex: "sourceDeliveryNoteNos",
               key: "sourceDeliveryNoteNos",
@@ -781,19 +797,19 @@ function renderCell(
   }
 
   if (key === "rate_bps" || key.endsWith("_bps")) {
-    return <Tag color="gold">{formatRateBps(value)}</Tag>;
+    return <Tag className="kagu-tag kagu-tag-draft">{formatRateBps(value)}</Tag>;
   }
 
   if (key === "is_active") {
     return (
-      <Tag color={value === false ? "default" : "green"}>
+      <Tag className={`kagu-tag ${value === false ? "kagu-tag-muted" : "kagu-tag-neutral"}`}>
         {formatBoolean(value)}
       </Tag>
     );
   }
 
   if (key === "status") {
-    return <Tag>{humanizeEnum(value)}</Tag>;
+    return <DocumentStatusTag status={value} />;
   }
 
   if (typeof value === "boolean") {

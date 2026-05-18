@@ -342,6 +342,7 @@ export const workspaceMenu = [
   { key: "dashboard", title: "Dashboard" },
   ...primaryMasterModules.map((module) => ({ key: module.key, title: module.title })),
   ...documentModules.map((module) => ({ key: module.key, title: module.title })),
+  { key: "stockStatement", title: "Stok / Malzeme Ekstresi" },
   { key: "projectReports", title: "Proje Raporlari" },
   { key: "settings", title: "Ayarlar" },
 ];

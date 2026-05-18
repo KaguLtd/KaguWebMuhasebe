@@ -168,7 +168,10 @@ export interface AuditEvent {
 }
 
 export type AccountStatementRow = LedgerEntry & {
+  displayDocNo?: string;
   runningBalanceMinor: number;
+  sourceDescription?: string | null;
+  voucherTypeLabel?: string;
 };
 
 export interface AccountStatementReport {
@@ -225,8 +228,11 @@ export interface ProjectReportFilters {
 }
 
 export interface ProjectStockMovementRow extends StockMovement {
+  description?: string | null;
+  displayDocNo?: string;
   itemCode: string;
   itemName: string;
+  voucherTypeLabel?: string;
   warehouseCode: string;
   warehouseName: string;
 }
@@ -246,6 +252,7 @@ export interface ProjectStockMovementReport {
 }
 
 export interface ProjectInvoiceRow {
+  displayDocNo?: string;
   id: string;
   docNo: string;
   docDate: string;
@@ -299,6 +306,7 @@ export interface ProjectMaterialUsageReport {
 }
 
 export interface ProjectEstimatedMarginInvoiceRow {
+  displayDocNo?: string;
   id: string;
   docNo: string;
   docDate: string;
@@ -307,6 +315,42 @@ export interface ProjectEstimatedMarginInvoiceRow {
   costTotalMinor: number;
   profitMinor: number;
   marginPercent: number | null;
+}
+
+export interface StockStatementFilters {
+  accountId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  itemId?: string;
+  projectId?: string;
+  warehouseId?: string;
+}
+
+export interface StockStatementRow extends StockMovement {
+  accountLabel: string | null;
+  description: string | null;
+  displayDocNo: string;
+  itemCode: string;
+  itemName: string;
+  projectLabel: string | null;
+  runningBalance: number;
+  unitLabel: string | null;
+  voucherTypeLabel: string;
+  warehouseLabel: string;
+}
+
+export interface StockStatementReport {
+  account: DataRecord | null;
+  dateFrom?: string;
+  dateTo?: string;
+  item: DataRecord | null;
+  project: DataRecord | null;
+  rows: StockStatementRow[];
+  summary: {
+    totalQtyIn: number;
+    totalQtyOut: number;
+  };
+  warehouse: DataRecord | null;
 }
 
 export interface ProjectEstimatedMarginSummary {

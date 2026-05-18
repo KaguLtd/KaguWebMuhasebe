@@ -39,6 +39,7 @@ import { MasterWorkspace } from "./MasterWorkspace";
 import { ProjectReportsWorkspace } from "./ProjectReportsWorkspace";
 import { SettingsPeriodLockPanel } from "./SettingsPeriodLockPanel";
 import { SettingsUsersPanel } from "./SettingsUsersPanel";
+import { StockStatementWorkspace } from "./StockStatementWorkspace";
 import {
   documentModules,
   type DocumentModuleConfig,
@@ -272,6 +273,9 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
               {!loading && activeMenu === "projectReports" ? (
                 <ProjectReportsWorkspace lookups={lookups} />
               ) : null}
+              {!loading && activeMenu === "stockStatement" ? (
+                <StockStatementWorkspace lookups={lookups} />
+              ) : null}
               {!loading && masterModule ? (
                 <MasterWorkspace
                   config={masterModule}
@@ -467,6 +471,10 @@ function resolveRequiredLookups({
     return ["projects", "warehouses"];
   }
 
+  if (activeMenu === "stockStatement") {
+    return ["accounts", "projects", "warehouses", "items"];
+  }
+
   if (masterModule) {
     return uniqueLookups(masterModule.fields.map((field) => field.lookupEntity));
   }
@@ -506,6 +514,7 @@ const iconByKey: Record<string, ReactNode> = {
   receipts: <ShopOutlined />,
   projectReports: <TableOutlined />,
   settings: <SettingOutlined />,
+  stockStatement: <TableOutlined />,
   transfers: <SwapOutlined />,
   warehouses: <DeploymentUnitOutlined />,
 };

@@ -13,6 +13,9 @@ import type {
   ProjectMaterialUsageRow,
   ProjectStockMovementReport,
   ProjectStockMovementRow,
+  StockStatementFilters,
+  StockStatementReport,
+  StockStatementRow,
   WarehouseInventoryReport,
   WarehouseInventoryRow,
   WarehouseDocumentMovementReport,
@@ -20,6 +23,12 @@ import type {
 } from "./contracts";
 import { getDbInvoiceMetrics } from "./document-repository";
 import { currency, dateString, number, text } from "./db-shared";
+import {
+  deliveryNoteLabel,
+  invoiceKindLabel,
+  receiptKindLabel,
+  voucherTypeLabel,
+} from "./report-format";
 import { prisma } from "@/server/db";
 
 export async function getDbDashboardTotals(): Promise<AppSnapshot["dashboard"]> {
@@ -135,12 +144,47 @@ export async function getDbAccountStatementReport(
     relatedAccountId: entry.relatedAccountId ?? null,
     replacedByDocId: entry.replacedByDocId ?? null,
   }));
+  const docRefs = collectDocumentRefs(entries);
+  const [invoices, receipts, transfers] = await Promise.all([
+    prisma.invoice.findMany({ where: { id: { in: docRefs.invoiceIds } } }),
+    prisma.receipt.findMany({ where: { id: { in: docRefs.receiptIds } } }),
+    prisma.transfer.findMany({ where: { id: { in: docRefs.transferIds } } }),
+  ]);
+  const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+  const receiptById = new Map(receipts.map((receipt) => [receipt.id, receipt]));
+  const transferById = new Map(transfers.map((transfer) => [transfer.id, transfer]));
 
   for (const entry of entries) {
+    const invoice = invoiceById.get(entry.docId);
+    const receipt = receiptById.get(entry.docId);
+    const transfer = transferById.get(entry.docId);
+    const displayDocNo = invoice
+      ? preferredDocNo(invoice.actualDocNo, invoice.docNo)
+      : receipt
+        ? receipt.docNo
+        : transfer
+          ? transfer.docNo
+          : entry.docNo;
+    const rowVoucherTypeLabel = invoice
+      ? invoiceKindLabel(invoice.invoiceKind)
+      : receipt
+        ? receiptKindLabel(receipt.receiptKind)
+        : transfer
+          ? "Virman"
+          : voucherTypeLabel(entry.docType);
+    const sourceDescription =
+      invoice?.description ?? receipt?.description ?? transfer?.description ?? entry.description;
+
     debitTotalMinor += entry.debitMinor;
     creditTotalMinor += entry.creditMinor;
     runningBalanceMinor += entry.debitMinor - entry.creditMinor;
-    rows.push({ ...entry, runningBalanceMinor });
+    rows.push({
+      ...entry,
+      displayDocNo,
+      runningBalanceMinor,
+      sourceDescription,
+      voucherTypeLabel: rowVoucherTypeLabel,
+    });
   }
 
   return {
@@ -367,6 +411,127 @@ export async function getDbItemMovementReport(
   };
 }
 
+export async function getDbStockStatementReport(
+  options: StockStatementFilters = {},
+): Promise<StockStatementReport> {
+  const [account, project, warehouse, item] = await Promise.all([
+    options.accountId ? prisma.account.findUnique({ where: { id: options.accountId } }) : null,
+    options.projectId
+      ? prisma.project.findUnique({ include: { account: true }, where: { id: options.projectId } })
+      : null,
+    options.warehouseId
+      ? prisma.warehouse.findUnique({ where: { id: options.warehouseId } })
+      : null,
+    options.itemId
+      ? prisma.item.findUnique({ include: { unit: true }, where: { id: options.itemId } })
+      : null,
+  ]);
+
+  const movements = await prisma.stockMovement.findMany({
+    include: {
+      item: { include: { unit: true } },
+      project: true,
+      warehouse: true,
+    },
+    orderBy: [{ docDate: "asc" }, { createdAt: "asc" }],
+    where: {
+      isEffective: true,
+      ...(options.itemId ? { itemId: options.itemId } : {}),
+      ...(options.projectId ? { projectId: options.projectId } : {}),
+      ...(options.warehouseId ? { warehouseId: options.warehouseId } : {}),
+      ...dateRangeWhere(options.dateFrom, options.dateTo),
+    },
+  });
+  const docRefs = collectDocumentRefs(movements);
+  const [deliveryNotes, invoices] = await Promise.all([
+    prisma.deliveryNote.findMany({
+      include: { account: true },
+      where: { id: { in: docRefs.deliveryIds } },
+    }),
+    prisma.invoice.findMany({
+      include: { account: true },
+      where: { id: { in: docRefs.invoiceIds } },
+    }),
+  ]);
+  const deliveryById = new Map(deliveryNotes.map((note) => [note.id, note]));
+  const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+  const runningByItem = new Map<string, number>();
+  const rows: StockStatementRow[] = [];
+
+  for (const movement of movements) {
+    const delivery = deliveryById.get(movement.docId);
+    const invoice = invoiceById.get(movement.docId);
+    const sourceAccount = delivery?.account ?? invoice?.account ?? null;
+
+    if (options.accountId && sourceAccount?.id !== options.accountId) {
+      continue;
+    }
+
+    const running =
+      (runningByItem.get(movement.itemId) ?? 0) +
+      number(movement.qtyIn) -
+      number(movement.qtyOut);
+
+    runningByItem.set(movement.itemId, running);
+    rows.push({
+      accountLabel: sourceAccount ? `${sourceAccount.code} - ${sourceAccount.name}` : null,
+      cancelledAt: movement.cancelledAt?.toISOString() ?? null,
+      createdAt: movement.createdAt.toISOString(),
+      description: delivery?.description ?? invoice?.description ?? null,
+      displayDocNo: delivery
+        ? preferredDocNo(delivery.actualDocNo, delivery.docNo)
+        : invoice
+          ? preferredDocNo(invoice.actualDocNo, invoice.docNo)
+          : movement.docNo,
+      docDate: dateString(movement.docDate),
+      docId: movement.docId,
+      docNo: movement.docNo,
+      docType: movement.docType,
+      id: movement.id,
+      isEffective: movement.isEffective !== false,
+      itemCode: movement.item.code,
+      itemId: movement.itemId,
+      itemName: movement.item.name,
+      projectId: movement.projectId,
+      projectLabel: movement.project
+        ? `${movement.project.code} - ${movement.project.name}`
+        : null,
+      qtyIn: number(movement.qtyIn),
+      qtyOut: number(movement.qtyOut),
+      replacedByDocId: movement.replacedByDocId ?? null,
+      runningBalance: running,
+      unitLabel: movement.item.unit?.name ?? null,
+      voucherTypeLabel: delivery
+        ? deliveryNoteLabel(delivery)
+        : invoice
+          ? invoiceKindLabel(invoice.invoiceKind)
+          : voucherTypeLabel(movement.docType),
+      warehouseId: movement.warehouseId,
+      warehouseLabel: `${movement.warehouse.code} - ${movement.warehouse.name}`,
+    });
+  }
+
+  return {
+    account: account
+      ? { code: account.code, id: account.id, name: account.name }
+      : null,
+    dateFrom: options.dateFrom,
+    dateTo: options.dateTo,
+    item: item
+      ? { code: item.code, id: item.id, name: item.name, unit_label: item.unit?.name ?? null }
+      : null,
+    project: project ? projectReportRecord(project) : null,
+    rows,
+    summary: {
+      totalQtyIn: rows.reduce((total, row) => total + row.qtyIn, 0),
+      totalQtyOut: rows.reduce((total, row) => total + row.qtyOut, 0),
+    },
+    warehouse: warehouse
+      ? { code: warehouse.code, id: warehouse.id, name: warehouse.name }
+      : null,
+  };
+}
+
 export { getDbInvoiceMetrics };
 
 export async function getDbProjectStockMovementReport(
@@ -382,37 +547,63 @@ export async function getDbProjectStockMovementReport(
     return null;
   }
 
-  const rows: ProjectStockMovementRow[] = (
-    await prisma.stockMovement.findMany({
-      include: { item: true, warehouse: true },
-      orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
-      where: {
-        isEffective: true,
-        projectId,
-        ...(options.warehouseId ? { warehouseId: options.warehouseId } : {}),
-        ...dateRangeWhere(options.dateFrom, options.dateTo),
-      },
-    })
-  ).map((movement) => ({
-    cancelledAt: movement.cancelledAt?.toISOString() ?? null,
-    createdAt: movement.createdAt.toISOString(),
-    docDate: dateString(movement.docDate),
-    docId: movement.docId,
-    docNo: movement.docNo,
-    docType: movement.docType,
-    id: movement.id,
-    isEffective: movement.isEffective !== false,
-    itemCode: text(movement.item.code),
-    itemId: movement.itemId,
-    itemName: text(movement.item.name),
-    projectId: movement.projectId,
-    qtyIn: number(movement.qtyIn),
-    qtyOut: number(movement.qtyOut),
-    replacedByDocId: movement.replacedByDocId ?? null,
-    warehouseCode: text(movement.warehouse.code),
-    warehouseId: movement.warehouseId,
-    warehouseName: text(movement.warehouse.name),
-  }));
+  const movements = await prisma.stockMovement.findMany({
+    include: { item: true, warehouse: true },
+    orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
+    where: {
+      isEffective: true,
+      projectId,
+      ...(options.warehouseId ? { warehouseId: options.warehouseId } : {}),
+      ...dateRangeWhere(options.dateFrom, options.dateTo),
+    },
+  });
+  const docRefs = collectDocumentRefs(movements);
+  const [deliveryNotes, invoices] = await Promise.all([
+    prisma.deliveryNote.findMany({
+      where: { id: { in: docRefs.deliveryIds } },
+    }),
+    prisma.invoice.findMany({
+      where: { id: { in: docRefs.invoiceIds } },
+    }),
+  ]);
+  const deliveryById = new Map(deliveryNotes.map((note) => [note.id, note]));
+  const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+  const rows: ProjectStockMovementRow[] = movements.map((movement) => {
+    const delivery = deliveryById.get(movement.docId);
+    const invoice = invoiceById.get(movement.docId);
+
+    return {
+      cancelledAt: movement.cancelledAt?.toISOString() ?? null,
+      createdAt: movement.createdAt.toISOString(),
+      description: delivery?.description ?? invoice?.description ?? null,
+      displayDocNo: delivery
+        ? preferredDocNo(delivery.actualDocNo, delivery.docNo)
+        : invoice
+          ? preferredDocNo(invoice.actualDocNo, invoice.docNo)
+          : movement.docNo,
+      docDate: dateString(movement.docDate),
+      docId: movement.docId,
+      docNo: movement.docNo,
+      docType: movement.docType,
+      id: movement.id,
+      isEffective: movement.isEffective !== false,
+      itemCode: text(movement.item.code),
+      itemId: movement.itemId,
+      itemName: text(movement.item.name),
+      projectId: movement.projectId,
+      qtyIn: number(movement.qtyIn),
+      qtyOut: number(movement.qtyOut),
+      replacedByDocId: movement.replacedByDocId ?? null,
+      voucherTypeLabel: delivery
+        ? deliveryNoteLabel(delivery)
+        : invoice
+          ? invoiceKindLabel(invoice.invoiceKind)
+          : voucherTypeLabel(movement.docType),
+      warehouseCode: text(movement.warehouse.code),
+      warehouseId: movement.warehouseId,
+      warehouseName: text(movement.warehouse.name),
+    };
+  });
 
   return {
     project: projectReportRecord(project),
@@ -456,6 +647,7 @@ export async function getDbProjectInvoiceListReport(
     accountId: invoice.accountId,
     accountLabel: `${invoice.account.code} - ${invoice.account.name}`,
     currency: currency(invoice.currency),
+    displayDocNo: preferredDocNo(invoice.actualDocNo, invoice.docNo),
     docDate: dateString(invoice.docDate),
     docNo: invoice.docNo,
     grossTotalMinor: invoice.documentTotalMinor,
@@ -596,6 +788,7 @@ export async function getDbProjectEstimatedMarginReport(
     rows.push({
       costTotalMinor: metrics.costTotalMinor,
       currency: rowCurrency,
+      displayDocNo: preferredDocNo(invoice.actualDocNo, invoice.docNo),
       docDate: dateString(invoice.docDate),
       docNo: invoice.docNo,
       id: invoice.id,
@@ -764,6 +957,38 @@ function dateRangeWhere(dateFrom?: string, dateTo?: string) {
         },
       }
     : {};
+}
+
+function collectDocumentRefs(rows: Array<{ docId: string; docType: string }>) {
+  const deliveryIds = new Set<string>();
+  const invoiceIds = new Set<string>();
+  const receiptIds = new Set<string>();
+  const transferIds = new Set<string>();
+
+  for (const row of rows) {
+    if (row.docType.startsWith("DELIVERY_NOTE")) {
+      deliveryIds.add(row.docId);
+    } else if (row.docType.includes("INVOICE")) {
+      invoiceIds.add(row.docId);
+    } else if (row.docType.startsWith("RECEIPT")) {
+      receiptIds.add(row.docId);
+    } else if (row.docType === "TRANSFER") {
+      transferIds.add(row.docId);
+    }
+  }
+
+  return {
+    deliveryIds: [...deliveryIds],
+    invoiceIds: [...invoiceIds],
+    receiptIds: [...receiptIds],
+    transferIds: [...transferIds],
+  };
+}
+
+function preferredDocNo(actualDocNo: string | null | undefined, docNo: string) {
+  const actual = actualDocNo?.trim();
+
+  return actual || docNo;
 }
 
 function projectReportRecord(project: {

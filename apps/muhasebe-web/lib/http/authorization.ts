@@ -43,6 +43,7 @@ export const routePermissions = {
     reportKey:
       | "accountStatement"
       | "itemMovements"
+      | "stockStatement"
       | "warehouseInventory"
       | "projectStockMovements"
       | "projectInvoices"
@@ -54,6 +55,8 @@ export const routePermissions = {
         return [`reports.read`, `reports.accounts.read`, `reports.accounts.statement.read`];
       case "itemMovements":
         return [`reports.read`, `reports.items.read`, `reports.items.movements.read`];
+      case "stockStatement":
+        return [`reports.read`, `reports.stock.read`, `reports.stock.statement.read`];
       case "warehouseInventory":
         return [`reports.read`, `reports.warehouses.read`, `reports.warehouses.inventory.read`];
       case "projectStockMovements":

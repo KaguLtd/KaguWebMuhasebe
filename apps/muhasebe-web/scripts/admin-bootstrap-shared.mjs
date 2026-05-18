@@ -46,6 +46,10 @@ export const SYSTEM_PERMISSIONS = [
     key: "reports.projects.read",
   },
   {
+    description: "View stock statement reports.",
+    key: "reports.stock.statement.read",
+  },
+  {
     description: "View project stock movement reports.",
     key: "reports.projects.stock-movements.read",
   },

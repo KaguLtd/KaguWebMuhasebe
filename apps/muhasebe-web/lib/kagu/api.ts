@@ -24,6 +24,8 @@ import type {
   SettingsRole,
   SettingsUser,
   SettingsUserPayload,
+  StockStatementFilters,
+  StockStatementReport,
   WarehouseInventoryReport,
   WarehouseDocumentMovementReport,
 } from "./contracts";
@@ -271,6 +273,12 @@ export async function fetchProjectEstimatedMargin(
 ) {
   return fetchJson<ProjectEstimatedMarginReport>(
     `/api/reports/projects/${projectId}/estimated-margin${querySuffix(query)}`,
+  );
+}
+
+export async function fetchStockStatement(query: StockStatementFilters = {}) {
+  return fetchJson<StockStatementReport>(
+    `/api/reports/stock-statement${querySuffix(query)}`,
   );
 }
 

@@ -23,7 +23,6 @@ import {
 import {
   CopyOutlined,
   DeleteOutlined,
-  LinkOutlined,
   LockOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
@@ -33,6 +32,15 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldInput } from "./FieldInput";
+import {
+  DeliveryMovementTag,
+  DeliveryRoleTag,
+  DocumentStatusTag,
+  InvoiceKindTag,
+  isMutedDocumentRecord,
+  SourceLineTag,
+  StockEffectTag,
+} from "./DocumentTags";
 import type { DocumentModuleConfig, FieldConfig } from "@/lib/kagu/config";
 import {
   approveDocumentRecord,
@@ -68,7 +76,6 @@ import {
   formatMoneyInput,
   formatMinor,
   formatQuantity,
-  humanizeEnum,
   parseFormattedMoneyInput,
   parseMoneyToMinor,
   relationLookupByColumn,
@@ -541,12 +548,7 @@ export function DocumentWorkspace({
             total,
           }}
           rowClassName={(record) =>
-            record.status === "VOID" ||
-            record.status === "SUPERSEDED" ||
-            record.merge_role === "MERGED_SOURCE" ||
-            Boolean(record.invoiced_by_invoice_id)
-              ? "kagu-row-muted"
-              : ""
+            isMutedDocumentRecord(record) ? "kagu-row-muted" : ""
           }
           rowKey={(record) => String(record.id)}
           scroll={{ x: "max-content" }}
@@ -851,7 +853,13 @@ function DeliveryMergeDrawer({
             {
               dataIndex: "is_return",
               key: "is_return",
-              render: (value) => (value ? <Tag color="orange">Iade</Tag> : "-"),
+              render: (_value, record) => (
+                <DeliveryMovementTag
+                  direction={record.direction}
+                  isReturn={record.is_return}
+                  muted={isMutedDocumentRecord(record)}
+                />
+              ),
               title: "Iade",
             },
             { dataIndex: "doc_date", key: "doc_date", render: formatDate, title: "Tarih" },
@@ -979,7 +987,7 @@ function InvoiceDeliveryImportDrawer({
           {
             dataIndex: "merge_role",
             key: "merge_role",
-            render: (value, record) => renderDeliveryRoleTag(record, String(value)),
+            render: (_value, record) => <DeliveryRoleTag record={record} />,
             title: "Irsaliye Tipi",
           },
           { dataIndex: "doc_date", key: "doc_date", render: formatDate, title: "Tarih" },
@@ -1177,22 +1185,10 @@ function DocumentPostingDetail({
       <Card size="small" title="Revizyon Gecmisi">
         <Descriptions column={2} size="small">
           <Descriptions.Item label="Durum">
-            <Tag
-              color={
-                status === "APPROVED"
-                  ? "green"
-                  : status === "VOID"
-                    ? "red"
-                    : status === "SUPERSEDED"
-                      ? "purple"
-                      : "gold"
-              }
-            >
-              {humanizeEnum(status)}
-            </Tag>
+            <DocumentStatusTag muted={isMutedDocumentRecord(detail.header)} status={status} />
           </Descriptions.Item>
           <Descriptions.Item label="Etkili">
-            {detail.header.is_effective === false ? "Hayir" : "Evet"}
+            <StockEffectTag isEffective={detail.header.is_effective} />
           </Descriptions.Item>
           <Descriptions.Item label="Yerine Gecen Belge">
             {String(detail.header.superseded_by_id ?? "-")}
@@ -1232,19 +1228,19 @@ function DocumentPostingDetail({
       {invoiceMetrics ? (
         <Card size="small" title="Fatura Metrikleri">
           <Space wrap>
-            <Tag color="blue">
+            <Tag className="kagu-tag kagu-tag-neutral">
               Net {formatMinor(invoiceMetrics.invoiceNetTotalMinor, currency)}
             </Tag>
-            <Tag color="gold">
+            <Tag className="kagu-tag kagu-tag-neutral">
               Brut {formatMinor(invoiceMetrics.invoiceGrossTotalMinor, currency)}
             </Tag>
-            <Tag color="default">
+            <Tag className="kagu-tag kagu-tag-neutral">
               Maliyet {formatMinor(invoiceMetrics.costTotalMinor, currency)}
             </Tag>
-            <Tag color={invoiceMetrics.profitMinor >= 0 ? "green" : "red"}>
+            <Tag className="kagu-tag kagu-tag-neutral">
               Kar {formatMinor(invoiceMetrics.profitMinor, currency)}
             </Tag>
-            <Tag>
+            <Tag className="kagu-tag kagu-tag-neutral">
               Marj{" "}
               {invoiceMetrics.marginPercent === null
                 ? "-"
@@ -1436,10 +1432,14 @@ function ImportedDeliveryNoteTag() {
   }).length;
 
   if (!importedLineCount) {
-    return <Tag>Aktarilan irsaliye yok</Tag>;
+    return <Tag className="kagu-tag kagu-tag-neutral">Aktarılan irsaliye yok</Tag>;
   }
 
-  return <Tag color="cyan">{importedLineCount} satir irsaliyeden aktarildi</Tag>;
+  return (
+    <Tag className="kagu-tag kagu-tag-muted">
+      {importedLineCount} satır irsaliyeden aktarıldı
+    </Tag>
+  );
 }
 
 function InvoiceDraftTotals({
@@ -1735,18 +1735,10 @@ function EditableLineTable({
               key: "source",
               render: (_value: unknown, field: FormListField) => {
                 if (!isLinkedInvoiceLine(field.name)) {
-                  return <Tag>M</Tag>;
+                  return <SourceLineTag linked={false} />;
                 }
 
-                return (
-                  <Tag color="cyan">
-                    <Space size={4}>
-                      <LinkOutlined />
-                      <LockOutlined />
-                      Irs
-                    </Space>
-                  </Tag>
-                );
+                return <SourceLineTag linked />;
               },
               title: "Kaynak",
               width: 76,
@@ -2051,21 +2043,43 @@ function renderDocumentCell(
   }
 
   if (key === "status") {
-    const status = String(value ?? "");
-    const color =
-      status === "APPROVED"
-        ? "green"
-        : status === "VOID"
-          ? "red"
-          : status === "SUPERSEDED"
-            ? "purple"
-            : "gold";
+    return <DocumentStatusTag muted={isMutedDocumentRecord(record)} status={value} />;
+  }
 
-    return <Tag color={color}>{humanizeEnum(value)}</Tag>;
+  if (key === "invoice_kind") {
+    return <InvoiceKindTag invoiceKind={value} muted={isMutedDocumentRecord(record)} />;
+  }
+
+  if (key === "direction") {
+    return (
+      <DeliveryMovementTag
+        direction={value}
+        isReturn={record.is_return}
+        muted={isMutedDocumentRecord(record)}
+      />
+    );
+  }
+
+  if (key === "is_return") {
+    if (!value) {
+      return "-";
+    }
+
+    return (
+      <DeliveryMovementTag
+        direction={record.direction}
+        isReturn={value}
+        muted={isMutedDocumentRecord(record)}
+      />
+    );
+  }
+
+  if (key === "is_effective") {
+    return <StockEffectTag isEffective={value} />;
   }
 
   if (key === "merge_role") {
-    return renderDeliveryRoleTag(record, String(value ?? "NORMAL"));
+    return <DeliveryRoleTag record={record} />;
   }
 
   if (typeof value === "boolean") {
@@ -2184,26 +2198,6 @@ function calculateInvoiceLineTotals(line: Record<string, unknown>) {
     netTotalMinor,
     vatTotalMinor,
   };
-}
-
-function renderDeliveryRoleTag(record: DataRecord, value: string) {
-  if (record.invoiced_by_invoice_id && value === "MERGED_RESULT") {
-    return <Tag color="purple">F/B-Irsaliye</Tag>;
-  }
-
-  if (record.invoiced_by_invoice_id) {
-    return <Tag color="cyan">F-Irsaliye</Tag>;
-  }
-
-  if (value === "MERGED_RESULT") {
-    return <Tag color="blue">B-Irsaliye</Tag>;
-  }
-
-  if (value === "MERGED_SOURCE") {
-    return <Tag color="gold">K-Irsaliye</Tag>;
-  }
-
-  return <Tag>Normal</Tag>;
 }
 
 function buildMergePreview(

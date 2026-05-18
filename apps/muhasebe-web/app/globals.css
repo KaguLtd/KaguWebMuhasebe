@@ -206,6 +206,84 @@ input {
   font-weight: 700;
 }
 
+.kagu-tag.ant-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  margin-inline-end: 4px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 18px;
+}
+
+.kagu-tag-sales.ant-tag {
+  border-color: #b8d3e8;
+  background: #eef5fb;
+  color: #1f4e79;
+}
+
+.kagu-tag-sales-soft.ant-tag {
+  border-color: #c7dceb;
+  background: #f5f9fc;
+  color: #315f86;
+}
+
+.kagu-tag-purchase.ant-tag {
+  border-color: #b8d8c2;
+  background: #eff7f1;
+  color: #2f5f46;
+}
+
+.kagu-tag-purchase-soft.ant-tag {
+  border-color: #c8dfcf;
+  background: #f6fbf7;
+  color: #3d6b52;
+}
+
+.kagu-tag-draft.ant-tag {
+  border-color: #e3d7aa;
+  background: #faf6e8;
+  color: #6f5a1e;
+}
+
+.kagu-tag-muted.ant-tag {
+  border-color: #d1d5db;
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.kagu-tag-neutral.ant-tag {
+  border-color: #d1d5db;
+  background: #f9fafb;
+  color: #374151;
+}
+
+.kagu-stock-effect {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #4b5563;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.kagu-stock-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+
+.kagu-stock-dot-effective {
+  background: #4f9467;
+}
+
+.kagu-stock-dot-muted {
+  background: #9ca3af;
+}
+
 .kagu-drawer-actions {
   display: flex;
   justify-content: flex-end;
@@ -399,7 +477,152 @@ input {
   background: #f1eadf;
 }
 
+.kagu-report-print-page {
+  min-height: 100vh;
+  padding: 22px;
+  background: #e8e8e8;
+  color: #000;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.kagu-report-print-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 11mm;
+  background: #fff;
+  border: 1px solid #bdbdbd;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+}
+
+.kagu-report-print-header {
+  border-bottom: 1px solid #000;
+  margin-bottom: 7px;
+  padding-bottom: 5px;
+}
+
+.kagu-report-print-topline {
+  display: grid;
+  align-items: start;
+  grid-template-columns: 1fr 1.5fr 1fr;
+  gap: 8px;
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.kagu-report-print-topline strong {
+  text-align: center;
+  font-size: 12px;
+}
+
+.kagu-report-print-topline span:last-child {
+  text-align: right;
+}
+
+.kagu-report-print-company {
+  margin-top: 4px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.kagu-report-print-subject {
+  margin-top: 3px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.kagu-report-print-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 14px;
+  margin: 5px 0 0;
+  font-size: 9px;
+}
+
+.kagu-report-print-meta div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 4px;
+}
+
+.kagu-report-print-meta dt {
+  font-weight: 700;
+}
+
+.kagu-report-print-meta dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kagu-report-print-note {
+  margin: 4px 0 0;
+  font-size: 8.5px;
+}
+
+.kagu-report-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 8.5px;
+  line-height: 1.22;
+}
+
+.kagu-report-print-table th,
+.kagu-report-print-table td {
+  overflow: hidden;
+  padding: 3px 4px;
+  border: 1px solid #b8b8b8;
+  text-align: left;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+.kagu-report-print-table th {
+  border-color: #000;
+  background: #f2f2f2;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kagu-report-print-table td {
+  white-space: nowrap;
+}
+
+.kagu-report-print-table .kagu-report-desc {
+  white-space: nowrap;
+}
+
+.kagu-report-print-table .kagu-report-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.kagu-report-print-table .kagu-report-total-row td {
+  border-top: 1px solid #000;
+  font-weight: 700;
+}
+
+.kagu-report-print-table .kagu-report-empty {
+  text-align: center;
+  white-space: normal;
+}
+
+.kagu-print-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
   html,
   body {
     background: white !important;
@@ -420,6 +643,44 @@ input {
 
   .kagu-print-actions {
     display: none;
+  }
+
+  body:has(.kagu-report-print-page) .kagu-shell,
+  body:has(.kagu-report-print-page) .kagu-header,
+  body:has(.kagu-report-print-page) .kagu-sider {
+    display: none !important;
+  }
+
+  .kagu-report-print-page {
+    min-height: auto;
+    padding: 0;
+    background: #fff;
+  }
+
+  .kagu-report-print-sheet {
+    width: auto;
+    min-height: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .kagu-report-print-table thead {
+    display: table-header-group;
+  }
+
+  .kagu-report-print-table tfoot {
+    display: table-footer-group;
+  }
+
+  .kagu-report-print-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .kagu-report-page-number::after {
+    content: counter(page);
   }
 }
 

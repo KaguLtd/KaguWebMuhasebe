@@ -1,8 +1,17 @@
 import { notFound } from "next/navigation";
 
+import {
+  ReportPrintHeader,
+  ReportPrintLayout,
+  ReportPrintTable,
+} from "@/components/kagu/print/ReportPrint";
 import { StatementPrintButton } from "@/components/kagu/StatementPrintButton";
-import { formatDate, formatMinor } from "@/lib/kagu/helpers";
 import { getDbAccountStatementReport } from "@/lib/kagu/report-repository";
+import {
+  formatBalanceWithSide,
+  formatReportDate,
+  formatReportMoney,
+} from "@/lib/kagu/report-format";
 
 type PageProps = {
   searchParams: Promise<{
@@ -34,60 +43,65 @@ export default async function AccountStatementPrintPage({
   const currency = typeof report.account.currency === "string"
     ? report.account.currency
     : "TRY";
-  const accountTitle = `${String(report.account.code ?? "")} - ${String(
+  const accountTitle = `${String(report.account.code ?? "")} / ${String(
     report.account.name ?? "",
   )}`;
 
   return (
-    <main className="kagu-print-page">
-      <section className="kagu-print-sheet">
-        <header className="kagu-print-header">
-          <div>
-            <p className="kagu-section-kicker">KAGU Cari Ekstre</p>
-            <h1>{accountTitle}</h1>
-            <p>
-              Tarih araligi: {formatDate(params.dateFrom)} / {formatDate(params.dateTo)}
-            </p>
-          </div>
-          <div className="kagu-print-actions">
-            <StatementPrintButton />
-          </div>
-        </header>
-        <div className="kagu-print-summary">
-          <strong>Borc: {formatMinor(report.debitTotalMinor, currency)}</strong>
-          <strong>Alacak: {formatMinor(report.creditTotalMinor, currency)}</strong>
-          <strong>Bakiye: {formatMinor(report.closingBalanceMinor, currency)}</strong>
-        </div>
-        <table className="kagu-print-table">
+    <ReportPrintLayout actions={<StatementPrintButton />}>
+      <ReportPrintHeader
+        meta={[
+          {
+            label: "Tarih Araligi",
+            value: `${formatReportDate(params.dateFrom)} - ${formatReportDate(params.dateTo)}`,
+          },
+          { label: "Cari Hesap", value: accountTitle },
+          { label: "Para Birimi", value: currency },
+        ]}
+        subject={accountTitle}
+        title="Cari Hesap Ekstresi"
+      />
+        <ReportPrintTable>
           <thead>
             <tr>
-              <th>Tarih</th>
-              <th>Evrak No</th>
-              <th>Aciklama</th>
-              <th>Borc</th>
-              <th>Alacak</th>
-              <th>Bakiye</th>
+              <th style={{ width: "10%" }}>Tarih</th>
+              <th style={{ width: "14%" }}>Fis No</th>
+              <th style={{ width: "14%" }}>Fis Turu</th>
+              <th style={{ width: "30%" }}>Aciklama</th>
+              <th style={{ width: "10%" }}>Borc</th>
+              <th style={{ width: "10%" }}>Alacak</th>
+              <th style={{ width: "12%" }}>Bakiye</th>
             </tr>
           </thead>
           <tbody>
             {report.rows.map((row) => (
               <tr key={row.id}>
-                <td>{formatDate(row.docDate)}</td>
-                <td>{row.docNo}</td>
-                <td>{row.description ?? "-"}</td>
-                <td>{formatMinor(row.debitMinor, currency)}</td>
-                <td>{formatMinor(row.creditMinor, currency)}</td>
-                <td>{formatMinor(row.runningBalanceMinor, currency)}</td>
+                <td>{formatReportDate(row.docDate)}</td>
+                <td>{row.displayDocNo ?? row.docNo}</td>
+                <td>{row.voucherTypeLabel ?? row.docType}</td>
+                <td className="kagu-report-desc">{row.sourceDescription ?? row.description ?? "-"}</td>
+                <td className="kagu-report-num">{formatReportMoney(row.debitMinor, currency)}</td>
+                <td className="kagu-report-num">{formatReportMoney(row.creditMinor, currency)}</td>
+                <td className="kagu-report-num">{formatBalanceWithSide(row.runningBalanceMinor, currency)}</td>
               </tr>
             ))}
             {!report.rows.length ? (
               <tr>
-                <td colSpan={6}>Bu tarih araliginda cari hareketi yok.</td>
+                <td className="kagu-report-empty" colSpan={7}>
+                  Bu tarih araliginda cari hareketi bulunamadi.
+                </td>
               </tr>
             ) : null}
           </tbody>
-        </table>
-      </section>
-    </main>
+          <tfoot>
+            <tr className="kagu-report-total-row">
+              <td colSpan={4}>Toplam</td>
+              <td className="kagu-report-num">{formatReportMoney(report.debitTotalMinor, currency)}</td>
+              <td className="kagu-report-num">{formatReportMoney(report.creditTotalMinor, currency)}</td>
+              <td className="kagu-report-num">{formatBalanceWithSide(report.closingBalanceMinor, currency)}</td>
+            </tr>
+          </tfoot>
+        </ReportPrintTable>
+    </ReportPrintLayout>
   );
 }
