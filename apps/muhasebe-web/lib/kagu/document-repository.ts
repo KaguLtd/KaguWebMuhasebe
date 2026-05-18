@@ -415,6 +415,10 @@ export async function listDbDeliveryMergeCandidates(query: ListQuery = {}) {
     where.warehouseId = query.warehouseId;
   }
 
+  if (query.direction) {
+    where.direction = dbDeliveryDirection(query.direction);
+  }
+
   const rows = await prisma.deliveryNote.findMany({
     include: { lines: true },
     orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
@@ -611,6 +615,8 @@ export async function listDbInvoiceDeliveryNoteCandidates(query: ListQuery = {})
     where.warehouseId = query.warehouseId;
   }
 
+  where.direction = dbDeliveryDirection(invoiceKind === "SALES" ? "OUT" : "IN");
+
   const rows = await prisma.deliveryNote.findMany({
     include: { lines: true },
     orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
@@ -626,9 +632,8 @@ export async function listDbInvoiceDeliveryNoteCandidates(query: ListQuery = {})
       ...deliveryHeaderRecord(row),
       line_count: row.lines.length,
       lines: row.lines.map(deliveryLineRecord),
-      stock_direction: resolveDeliveryStockDirection(deliveryHeaderRecord(row)),
-    }))
-    .filter((row) => row.stock_direction === (invoiceKind === "SALES" ? "OUT" : "IN"));
+      stock_direction: deliveryImportDirection(deliveryHeaderRecord(row)),
+    }));
 }
 
 export async function importDbDeliveryNoteToInvoiceDraft(
@@ -657,7 +662,7 @@ export async function importDbDeliveryNoteToInvoiceDraft(
   const invoiceKind = resolveInvoiceKindForDeliveryImport(
     deliveryNote.account.accountKind,
     typeof payload.invoiceKind === "string" ? payload.invoiceKind : null,
-    resolveDeliveryStockDirection(deliveryHeader),
+    deliveryImportDirection(deliveryHeader),
   );
   const lineSources = await prisma.deliveryNoteLineSource.findMany({
     where: { deliveryNoteLineId: { in: deliveryNote.lines.map((line) => line.id) } },
@@ -1671,6 +1676,10 @@ async function assertDocumentRulesWithTx(
       throw new Error("Pasif cari ile yeni islem yapilamaz");
     }
 
+    if (entity === "deliveryNotes") {
+      assertDeliveryDirectionAllowedForAccount(account.accountKind, header);
+    }
+
     const expectedCurrency = currency(account?.currency);
 
     if (header.project_id) {
@@ -1767,6 +1776,21 @@ function currencyLockMessage(expectedCurrency: Currency) {
   return `Cari doviz kuru ${expectedCurrency}. Bu caride sadece ${expectedCurrency} ile islem yapilabilir.`;
 }
 
+export function assertDeliveryDirectionAllowedForAccount(
+  accountKind: string | null | undefined,
+  header: DataRecord,
+) {
+  const direction = String(header.direction ?? header.delivery_direction ?? "");
+
+  if (accountKind === "CUSTOMER" && direction !== "OUT") {
+    throw new Error("Musteri carilerde yalnizca cikis irsaliyesi kesilebilir.");
+  }
+
+  if (accountKind === "SUPPLIER" && direction !== "IN") {
+    throw new Error("Tedarikci carilerde yalnizca giris irsaliyesi kesilebilir.");
+  }
+}
+
 function dbCurrency(value: unknown): DbCurrency {
   return value === "USD"
     ? DbCurrency.USD
@@ -1855,7 +1879,7 @@ async function getSourceIdsInActiveMerge(tx: DbClient, sourceIds: string[]) {
   return new Set(rows.map((row) => row.sourceDeliveryNoteId));
 }
 
-function validateMergeSources(
+export function validateMergeSources(
   sources: Array<{
     accountId: string;
     direction: DbDeliveryDirection | string;
@@ -1893,7 +1917,9 @@ function validateMergeSources(
       throw new Error("Farkli projeler birlestirilemez");
     }
 
-    signedQuantityForMerge(source.direction, source.isReturn, 1, flow);
+    if (!isDirectionAllowedForMergeFlow(source.direction, flow)) {
+      throw new Error("Secilen irsaliye net akis tipiyle uyumlu degil");
+    }
   }
 
   return first;
@@ -2013,33 +2039,24 @@ function buildMergedDeliveryLines(
   return { lineSources, lines };
 }
 
-function signedQuantityForMerge(
+export function signedQuantityForMerge(
   direction: DbDeliveryDirection | string,
   isReturn: boolean,
   quantity: number,
   flow: DeliveryMergeFlow,
 ) {
-  if (flow === "SALES_OUT") {
-    if (direction === "OUT" && !isReturn) {
-      return quantity;
-    }
-
-    if (direction === "OUT" && isReturn) {
-      return -quantity;
-    }
-  }
-
-  if (flow === "PURCHASE_IN") {
-    if (direction === "IN" && !isReturn) {
-      return quantity;
-    }
-
-    if (direction === "IN" && isReturn) {
-      return -quantity;
-    }
+  if (isDirectionAllowedForMergeFlow(direction, flow)) {
+    return isReturn ? -quantity : quantity;
   }
 
   throw new Error("Secilen irsaliye net akis tipiyle uyumlu degil");
+}
+
+function isDirectionAllowedForMergeFlow(
+  direction: DbDeliveryDirection | string,
+  flow: DeliveryMergeFlow,
+) {
+  return flow === "SALES_OUT" ? direction === "OUT" : direction === "IN";
 }
 
 async function assertDeliveryNoteCanRevise(tx: Tx, header: DataRecord) {
@@ -2158,12 +2175,12 @@ async function assertInvoiceDeliveryLinksCanApprove(
       throw new Error("Fatura ve irsaliye carisi ayni olmalidir");
     }
 
-    const stockDirection = resolveDeliveryStockDirection(header);
-    if (invoiceHeader.invoice_kind === "SALES" && stockDirection !== "OUT") {
+    const importDirection = deliveryImportDirection(header);
+    if (invoiceHeader.invoice_kind === "SALES" && importDirection !== "OUT") {
       throw new Error("Satis faturasi yalnizca OUT etkili irsaliye aktarabilir");
     }
 
-    if (invoiceHeader.invoice_kind === "PURCHASE" && stockDirection !== "IN") {
+    if (invoiceHeader.invoice_kind === "PURCHASE" && importDirection !== "IN") {
       throw new Error("Alis faturasi yalnizca IN etkili irsaliye aktarabilir");
     }
   }
@@ -2712,6 +2729,10 @@ function resolveDeliveryStockDirection(header: DataRecord): "IN" | "OUT" {
   const isReturn = header.is_return === true || Number(header.is_return ?? 0) === 1;
 
   return baseIsInbound !== isReturn ? "IN" : "OUT";
+}
+
+function deliveryImportDirection(header: DataRecord): "IN" | "OUT" {
+  return String(header.direction) === "IN" ? "IN" : "OUT";
 }
 
 function resolveTransferTargetAmount(header: DataRecord) {

@@ -161,6 +161,12 @@ export function DocumentWorkspace({
       : module.entity === "invoices" && selectedAccount?.accountKind === "SUPPLIER"
         ? "PURCHASE"
         : undefined;
+  const lockedDeliveryDirection =
+    module.entity === "deliveryNotes" && selectedAccount?.accountKind === "CUSTOMER"
+      ? "OUT"
+      : module.entity === "deliveryNotes" && selectedAccount?.accountKind === "SUPPLIER"
+        ? "IN"
+        : undefined;
 
   useEffect(() => {
     let active = true;
@@ -260,6 +266,12 @@ export function DocumentWorkspace({
       form.setFieldValue("invoiceKind", lockedInvoiceKind);
     }
   }, [form, lockedInvoiceKind]);
+
+  useEffect(() => {
+    if (lockedDeliveryDirection) {
+      form.setFieldValue("direction", lockedDeliveryDirection);
+    }
+  }, [form, lockedDeliveryDirection]);
 
   function openNewDraft() {
     setEditing(null);
@@ -557,6 +569,7 @@ export function DocumentWorkspace({
                 field={field}
                 key={field.name}
                 lockedCurrency={lockedCurrency}
+                lockedDeliveryDirection={lockedDeliveryDirection}
                 lookups={lookups}
                 transferNeedsCrossRate={transferNeedsCrossRate}
                 lockedInvoiceKind={lockedInvoiceKind}
@@ -710,15 +723,22 @@ function DeliveryMergeDrawer({
       return;
     }
 
-    fetchDeliveryMergeCandidates(filters)
+    fetchDeliveryMergeCandidates({
+      ...filters,
+      direction: mergeDirectionForFlow(flow),
+    })
       .then(setCandidates)
       .catch((error: unknown) =>
         message.error(error instanceof Error ? error.message : "Adaylar alinamadi"),
       )
       .finally(() => setLoading(false));
-  }, [filters, message, open]);
+  }, [filters, flow, message, open]);
 
-  const selectedRows = candidates.filter((row) => selectedIds.includes(String(row.id)));
+  const visibleCandidates = useMemo(
+    () => candidates.filter((row) => isMergeCandidateAllowedForFlow(row, flow)),
+    [candidates, flow],
+  );
+  const selectedRows = visibleCandidates.filter((row) => selectedIds.includes(String(row.id)));
   const preview = buildMergePreview(selectedRows, flow, lookups);
 
   async function submit() {
@@ -729,7 +749,7 @@ function DeliveryMergeDrawer({
     submitInFlightRef.current = true;
     setLoading(true);
     try {
-      await createMergedDeliveryNoteDraft(selectedIds, flow);
+      await createMergedDeliveryNoteDraft(selectedRows.map((row) => String(row.id)), flow);
       message.success("B-Irsaliye taslagi olusturuldu");
       setSelectedIds([]);
       onMerged();
@@ -801,7 +821,7 @@ function DeliveryMergeDrawer({
             { dataIndex: "doc_date", key: "doc_date", title: "Tarih" },
             { dataIndex: "line_count", key: "line_count", title: "Satir" },
           ]}
-          dataSource={candidates}
+          dataSource={visibleCandidates}
           loading={loading}
           pagination={{ pageSize: 8 }}
           rowKey={(record) => String(record.id)}
@@ -825,7 +845,7 @@ function DeliveryMergeDrawer({
         />
         <Space className="kagu-drawer-actions">
           <Button onClick={onClose}>Vazgec</Button>
-          <Button disabled={loading || selectedIds.length < 2} loading={loading} onClick={submit} type="primary">
+          <Button disabled={loading || selectedRows.length < 2} loading={loading} onClick={submit} type="primary">
             B-Irsaliye Taslagi Olustur
           </Button>
         </Space>
@@ -1219,6 +1239,7 @@ function DocumentPostingDetail({
 function DocumentHeaderField({
   availableProjects,
   field,
+  lockedDeliveryDirection,
   lockedInvoiceKind,
   lockedCurrency,
   lookups,
@@ -1226,6 +1247,7 @@ function DocumentHeaderField({
 }: {
   availableProjects: LookupItem[];
   field: FieldConfig;
+  lockedDeliveryDirection?: "IN" | "OUT";
   lockedInvoiceKind?: "SALES" | "PURCHASE";
   lockedCurrency?: Currency;
   lookups: LookupMap;
@@ -1277,6 +1299,23 @@ function DocumentHeaderField({
     return (
       <Form.Item label={field.label} name={field.name} rules={rules}>
         <Select disabled={Boolean(lockedInvoiceKind)} options={options} />
+      </Form.Item>
+    );
+  }
+
+  if (field.name === "direction" && field.type === "select") {
+    const options = lockedDeliveryDirection
+      ? [
+          {
+            label: lockedDeliveryDirection === "OUT" ? "Cikis" : "Giris",
+            value: lockedDeliveryDirection,
+          },
+        ]
+      : field.options;
+
+    return (
+      <Form.Item label={field.label} name={field.name} rules={rules}>
+        <Select disabled={Boolean(lockedDeliveryDirection)} options={options} />
       </Form.Item>
     );
   }
@@ -1667,18 +1706,7 @@ function buildMergePreview(
     for (const line of row.lines ?? []) {
       const itemId = String(line.item_id ?? "");
       const quantity = Number(line.quantity ?? 0);
-      const signed =
-        flow === "SALES_OUT"
-          ? row.direction === "OUT" && !row.is_return
-            ? quantity
-            : row.direction === "OUT" && row.is_return
-              ? -quantity
-              : 0
-          : row.direction === "IN" && !row.is_return
-            ? quantity
-            : row.direction === "IN" && row.is_return
-              ? -quantity
-              : 0;
+      const signed = signedQuantityForMergePreview(row, quantity, flow);
 
       byItem.set(itemId, (byItem.get(itemId) ?? 0) + signed);
     }
@@ -1691,6 +1719,26 @@ function buildMergePreview(
       itemLabel: findLookup(lookups.items, itemId)?.label ?? itemId,
       quantity: formatQuantity(quantity),
     }));
+}
+
+function mergeDirectionForFlow(flow: DeliveryMergeFlow) {
+  return flow === "SALES_OUT" ? "OUT" : "IN";
+}
+
+function isMergeCandidateAllowedForFlow(row: DeliveryNoteCandidate, flow: DeliveryMergeFlow) {
+  return row.direction === mergeDirectionForFlow(flow);
+}
+
+function signedQuantityForMergePreview(
+  row: DeliveryNoteCandidate,
+  quantity: number,
+  flow: DeliveryMergeFlow,
+) {
+  if (!isMergeCandidateAllowedForFlow(row, flow)) {
+    throw new Error("Secilen irsaliye net akis tipiyle uyumlu degil");
+  }
+
+  return row.is_return ? -quantity : quantity;
 }
 
 function defaultDocumentValues(module: DocumentModuleConfig): DocumentFormValues {

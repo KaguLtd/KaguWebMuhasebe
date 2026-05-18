@@ -168,6 +168,156 @@ test("return delivery notes flip stock direction", () => {
   assert.equal(approved.stockMovements[0].qtyOut, 0);
 });
 
+test("customer delivery notes only allow OUT direction, including returns", () => {
+  assert.throws(
+    () =>
+      engine.saveDocumentDraft("deliveryNotes", {
+        direction: "IN",
+        actualDocNo: "IRS-CUST-IN-001",
+        accountId: "account-customer-1",
+        warehouseId: "warehouse-main",
+        docDate: "2026-05-04",
+        lines: [
+          {
+            itemId: "item-raw-steel",
+            quantity: 1,
+            unitPriceMinor: 0,
+            vatRateBps: 2000,
+          },
+        ],
+      }),
+    /Musteri carilerde yalnizca cikis irsaliyesi kesilebilir\./,
+  );
+
+  const normal = engine.saveDocumentDraft("deliveryNotes", {
+    direction: "OUT",
+    actualDocNo: "IRS-CUST-OUT-001",
+    accountId: "account-customer-1",
+    warehouseId: "warehouse-main",
+    docDate: "2026-05-04",
+    lines: [
+      {
+        itemId: "item-raw-steel",
+        quantity: 1,
+        unitPriceMinor: 0,
+        vatRateBps: 2000,
+      },
+    ],
+  });
+  const returned = engine.saveDocumentDraft("deliveryNotes", {
+    direction: "OUT",
+    isReturn: true,
+    actualDocNo: "IRS-CUST-RETURN-001",
+    accountId: "account-customer-1",
+    warehouseId: "warehouse-main",
+    docDate: "2026-05-04",
+    lines: [
+      {
+        itemId: "item-raw-steel",
+        quantity: 1,
+        unitPriceMinor: 0,
+        vatRateBps: 2000,
+      },
+    ],
+  });
+
+  assert.equal(engine.approveDocument("deliveryNotes", normal.header.id).header.status, "APPROVED");
+  assert.equal(engine.approveDocument("deliveryNotes", returned.header.id).header.status, "APPROVED");
+});
+
+test("supplier delivery notes only allow IN direction, including returns", () => {
+  assert.throws(
+    () =>
+      engine.saveDocumentDraft("deliveryNotes", {
+        direction: "OUT",
+        actualDocNo: "IRS-SUP-OUT-001",
+        accountId: "account-supplier-1",
+        warehouseId: "warehouse-main",
+        docDate: "2026-05-04",
+        lines: [
+          {
+            itemId: "item-raw-steel",
+            quantity: 1,
+            unitPriceMinor: 0,
+            vatRateBps: 2000,
+          },
+        ],
+      }),
+    /Tedarikci carilerde yalnizca giris irsaliyesi kesilebilir\./,
+  );
+
+  const normal = engine.saveDocumentDraft("deliveryNotes", {
+    direction: "IN",
+    actualDocNo: "IRS-SUP-IN-001",
+    accountId: "account-supplier-1",
+    warehouseId: "warehouse-main",
+    docDate: "2026-05-04",
+    lines: [
+      {
+        itemId: "item-raw-steel",
+        quantity: 1,
+        unitPriceMinor: 0,
+        vatRateBps: 2000,
+      },
+    ],
+  });
+  const returned = engine.saveDocumentDraft("deliveryNotes", {
+    direction: "IN",
+    isReturn: true,
+    actualDocNo: "IRS-SUP-RETURN-001",
+    accountId: "account-supplier-1",
+    warehouseId: "warehouse-main",
+    docDate: "2026-05-04",
+    lines: [
+      {
+        itemId: "item-raw-steel",
+        quantity: 1,
+        unitPriceMinor: 0,
+        vatRateBps: 2000,
+      },
+    ],
+  });
+
+  assert.equal(engine.approveDocument("deliveryNotes", normal.header.id).header.status, "APPROVED");
+  assert.equal(engine.approveDocument("deliveryNotes", returned.header.id).header.status, "APPROVED");
+});
+
+test("both account delivery notes allow IN and OUT directions", () => {
+  const out = engine.saveDocumentDraft("deliveryNotes", {
+    direction: "OUT",
+    actualDocNo: "IRS-BOTH-OUT-001",
+    accountId: "account-both-1",
+    warehouseId: "warehouse-main",
+    docDate: "2026-05-04",
+    lines: [
+      {
+        itemId: "item-raw-steel",
+        quantity: 1,
+        unitPriceMinor: 0,
+        vatRateBps: 2000,
+      },
+    ],
+  });
+  const inbound = engine.saveDocumentDraft("deliveryNotes", {
+    direction: "IN",
+    actualDocNo: "IRS-BOTH-IN-001",
+    accountId: "account-both-1",
+    warehouseId: "warehouse-main",
+    docDate: "2026-05-04",
+    lines: [
+      {
+        itemId: "item-raw-steel",
+        quantity: 1,
+        unitPriceMinor: 0,
+        vatRateBps: 2000,
+      },
+    ],
+  });
+
+  assert.equal(engine.approveDocument("deliveryNotes", out.header.id).header.status, "APPROVED");
+  assert.equal(engine.approveDocument("deliveryNotes", inbound.header.id).header.status, "APPROVED");
+});
+
 test("invoice lines linked to delivery lines move stock effect from delivery to invoice", () => {
   const delivery = engine.saveDocumentDraft("deliveryNotes", {
     direction: "OUT",

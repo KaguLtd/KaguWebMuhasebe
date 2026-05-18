@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       items: await listDbDeliveryMergeCandidates({
         accountId: params.get("accountId") ?? undefined,
+        direction: params.get("direction") ?? undefined,
         projectId: params.get("projectId") ?? undefined,
         warehouseId: params.get("warehouseId") ?? undefined,
       }),

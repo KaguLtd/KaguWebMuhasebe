@@ -304,6 +304,7 @@ export function saveDocumentDraft(entity: DocumentEntity, payload: DocumentPaylo
   };
 
   reserveInvoiceDraftNumber(entity, id, nextHeader);
+  validateDocumentRules(entity, nextHeader);
 
   const nextLines = normalizeLines(entity, id, payload.lines ?? []);
 
@@ -350,6 +351,7 @@ export function approveDocument(entity: DocumentEntity, id: string) {
 
   const lines = store.lines[entity].filter((line) => line[parentKey(entity)] === id);
 
+  validateDocumentRules(entity, header);
   validateApproval(entity, header, lines);
 
   const docType = documentType(entity, header);
@@ -691,6 +693,37 @@ function validateApproval(entity: DocumentEntity, header: DataRecord, lines: Dat
       throw new Error("Transfer amount must be greater than zero");
     }
   }
+}
+
+function validateDocumentRules(entity: DocumentEntity, header: DataRecord) {
+  if (entity !== "deliveryNotes") {
+    return;
+  }
+
+  const accountKind = accountKindForDocumentRules(header.account_id);
+  const direction = String(header.direction ?? "");
+
+  if (accountKind === "CUSTOMER" && direction !== "OUT") {
+    throw new Error("Musteri carilerde yalnizca cikis irsaliyesi kesilebilir.");
+  }
+
+  if (accountKind === "SUPPLIER" && direction !== "IN") {
+    throw new Error("Tedarikci carilerde yalnizca giris irsaliyesi kesilebilir.");
+  }
+}
+
+function accountKindForDocumentRules(accountId: unknown) {
+  const normalized = String(accountId ?? "").toLowerCase();
+
+  if (normalized.includes("supplier")) {
+    return "SUPPLIER";
+  }
+
+  if (normalized.includes("both")) {
+    return "BOTH";
+  }
+
+  return "CUSTOMER";
 }
 
 function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRecord[]) {

@@ -123,7 +123,7 @@ test("delivery merge and invoicing workflows keep separate semantic fields", asy
   assert.match(repositorySource, /B-Irsaliye taslagi elle degistirilemez/);
   assert.match(repositorySource, /MERGED_SOURCE[\s\S]+faturaya aktarilamaz/);
   assert.match(repositorySource, /Negatif net miktar reddedildi/);
-  assert.match(repositorySource, /direction === "OUT" && isReturn/);
+  assert.match(repositorySource, /return isReturn \? -quantity : quantity/);
 });
 
 test("warehouse document movements and invoice candidates use go-live filters", async () => {
@@ -134,7 +134,7 @@ test("warehouse document movements and invoice candidates use go-live filters", 
   ]);
 
   assert.match(repositorySource, /resolveInvoiceKindForAccount/);
-  assert.match(repositorySource, /stock_direction === \(invoiceKind === "SALES" \? "OUT" : "IN"\)/);
+  assert.match(repositorySource, /where\.direction = dbDeliveryDirection\(invoiceKind === "SALES" \? "OUT" : "IN"\)/);
   assert.match(repositorySource, /getSourceIdsInActiveMerge/);
   assert.match(reportSource, /where: \{ isEffective: true, warehouseId \}/);
   assert.match(reportSource, /sourceDeliveryNoteNos/);

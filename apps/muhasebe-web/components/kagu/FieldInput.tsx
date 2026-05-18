@@ -9,11 +9,12 @@ import { selectableLookupOptions } from "@/lib/kagu/helpers";
 type LookupMap = Partial<Record<LookupEntity, LookupItem[]>>;
 
 interface FieldInputProps {
+  disabled?: boolean;
   field: FieldConfig;
   lookups: LookupMap;
 }
 
-export function FieldInput({ field, lookups }: FieldInputProps) {
+export function FieldInput({ disabled = false, field, lookups }: FieldInputProps) {
   const form = Form.useFormInstance();
   const currentValue = Form.useWatch(field.name, form);
   const rules = field.required
@@ -29,7 +30,7 @@ export function FieldInput({ field, lookups }: FieldInputProps) {
         tooltip={field.hint}
         valuePropName="checked"
       >
-        <Switch checkedChildren="Aktif" unCheckedChildren="Pasif" />
+        <Switch checkedChildren="Aktif" disabled={disabled} unCheckedChildren="Pasif" />
       </Form.Item>
     );
   }
@@ -41,20 +42,26 @@ export function FieldInput({ field, lookups }: FieldInputProps) {
       rules={rules}
       tooltip={field.hint}
     >
-      {renderControl(field, lookups, currentValue)}
+      {renderControl(field, lookups, currentValue, disabled)}
     </Form.Item>
   );
 }
 
-function renderControl(field: FieldConfig, lookups: LookupMap, currentValue?: unknown) {
+function renderControl(
+  field: FieldConfig,
+  lookups: LookupMap,
+  currentValue?: unknown,
+  disabled = false,
+) {
   if (field.type === "textarea") {
-    return <Input.TextArea autoSize={{ minRows: 3 }} />;
+    return <Input.TextArea autoSize={{ minRows: 3 }} disabled={disabled} />;
   }
 
   if (field.type === "number") {
     return (
       <InputNumber
         decimalSeparator=","
+        disabled={disabled}
         min={field.min}
         precision={field.moneyMinor ? 2 : undefined}
         step={field.step ?? (field.moneyMinor ? 0.01 : 1)}
@@ -64,13 +71,14 @@ function renderControl(field: FieldConfig, lookups: LookupMap, currentValue?: un
   }
 
   if (field.type === "date") {
-    return <DatePicker format="YYYY-MM-DD" style={{ width: "100%" }} />;
+    return <DatePicker disabled={disabled} format="YYYY-MM-DD" style={{ width: "100%" }} />;
   }
 
   if (field.type === "select") {
     return (
       <Select
         allowClear={!field.required}
+        disabled={disabled}
         options={selectOptions(field, lookups, currentValue)}
         showSearch
         optionFilterProp="label"
@@ -78,7 +86,7 @@ function renderControl(field: FieldConfig, lookups: LookupMap, currentValue?: un
     );
   }
 
-  return <Input />;
+  return <Input disabled={disabled} />;
 }
 
 function selectOptions(field: FieldConfig, lookups: LookupMap, currentValue?: unknown) {
