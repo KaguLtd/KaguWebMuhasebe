@@ -139,7 +139,7 @@ test("user-facing config labels and document list column order stay Turkish", as
   assert.doesNotMatch(configSource, /Doviz Kuru/);
 });
 
-test("dashboard invoice totals include only approved effective invoices by currency", async () => {
+test("dashboard invoice totals include only approved effective 120 account invoices by currency", async () => {
   const { getDbDashboardTotals } = await importAppModule("lib/kagu/report-repository.ts");
   const now = new Date();
   const year = now.getUTCFullYear();
@@ -152,6 +152,7 @@ test("dashboard invoice totals include only approved effective invoices by curre
       findMany: async ({ where }) => {
         assert.equal(where.status, "APPROVED");
         assert.equal(where.isEffective, true);
+        assert.deepEqual(where.account, { code: { startsWith: "120" } });
         assert(where.docDate.gte instanceof Date);
 
         return [
@@ -160,12 +161,6 @@ test("dashboard invoice totals include only approved effective invoices by curre
             docDate: new Date(`${year}-${month}-02T00:00:00.000Z`),
             documentTotalMinor: 1000,
             invoiceKind: "SALES",
-          },
-          {
-            currency: "USD",
-            docDate: new Date(`${year}-01-02T00:00:00.000Z`),
-            documentTotalMinor: 2500,
-            invoiceKind: "PURCHASE",
           },
         ];
       },
@@ -180,7 +175,7 @@ test("dashboard invoice totals include only approved effective invoices by curre
 
   assert.equal(totals.invoiceTotalsByCurrency.TRY.monthlyMinor, 1000);
   assert.equal(totals.invoiceTotalsByCurrency.TRY.yearlyMinor, 1000);
-  assert.equal(totals.invoiceTotalsByCurrency.USD.yearlyMinor, 2500);
+  assert.equal(totals.invoiceTotalsByCurrency.USD.yearlyMinor, 0);
   assert.equal(totals.invoiceTotalsByCurrency.EUR.yearlyMinor, 0);
 });
 

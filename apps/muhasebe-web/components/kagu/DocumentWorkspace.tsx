@@ -119,6 +119,7 @@ export function DocumentWorkspace({
   const [invoiceImportOpen, setInvoiceImportOpen] = useState(false);
   const saveInFlightRef = useRef(false);
   const voidInFlightRef = useRef(false);
+  const previousInvoiceTypeRef = useRef<string | undefined>(undefined);
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20 });
   const [filters, setFilters] = useState<ListQuery>({});
   const [total, setTotal] = useState(0);
@@ -274,17 +275,38 @@ export function DocumentWorkspace({
   }, [availableProjects, form, selectedAccount, watchedProjectId]);
 
   useEffect(() => {
-    if (module.entity !== "invoices" || watchedInvoiceType !== "STAR") {
+    if (module.entity !== "invoices") {
       return;
     }
 
+    const previousInvoiceType = previousInvoiceTypeRef.current;
+    previousInvoiceTypeRef.current = watchedInvoiceType;
     const lines = (form.getFieldValue("lines") ?? []) as Array<Record<string, unknown>>;
+
+    if (!lines.length) {
+      return;
+    }
+
+    if (watchedInvoiceType === "STAR") {
+      form.setFieldValue(
+        "lines",
+        lines.map((line) => ({ ...line, vatRateBps: 0 })),
+      );
+      return;
+    }
+
+    if (previousInvoiceType !== "STAR") {
+      return;
+    }
 
     form.setFieldValue(
       "lines",
-      lines.map((line) => ({ ...line, vatRateBps: 0 })),
+      lines.map((line) => ({
+        ...line,
+        vatRateBps: defaultVatRatePercentForLine(line, lookups),
+      })),
     );
-  }, [form, module.entity, watchedInvoiceType]);
+  }, [form, lookups, module.entity, watchedInvoiceType]);
 
   useEffect(() => {
     if (lockedInvoiceKind) {
@@ -299,6 +321,7 @@ export function DocumentWorkspace({
   }, [form, lockedDeliveryDirection]);
 
   function openNewDraft() {
+    previousInvoiceTypeRef.current = undefined;
     setEditing(null);
     setDetail(null);
     setInvoiceMetrics(null);
@@ -308,6 +331,7 @@ export function DocumentWorkspace({
   }
 
   async function openExistingDraft(record: DataRecord) {
+    previousInvoiceTypeRef.current = undefined;
     setEditing(record);
     setSaving(true);
 
@@ -1905,11 +1929,12 @@ function renderLineControl(
           context.disabled || (context.moduleEntity === "invoices" && context.invoiceType === "STAR")
         }
         options={(lookups.vatRates ?? [])
-          .filter((item) => item.isActive !== false)
           .map((item) => ({
             label: item.label,
             value: (item.rateBps ?? 0) / 100,
           }))}
+        optionFilterProp="label"
+        showSearch
         size="small"
       />
     );
@@ -2524,6 +2549,12 @@ function toStoredValue(field: FieldConfig, value: unknown) {
 
 function findLookup(items: LookupItem[] | undefined, id: unknown) {
   return (items ?? []).find((item) => item.id === id) ?? null;
+}
+
+function defaultVatRatePercentForLine(line: Record<string, unknown>, lookups: LookupMap) {
+  const item = findLookup(lookups.items, line.itemId);
+
+  return typeof item?.defaultVatRateBps === "number" ? item.defaultVatRateBps / 100 : undefined;
 }
 
 function filterProjectsByAccount(

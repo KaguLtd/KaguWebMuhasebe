@@ -46,6 +46,7 @@ export async function getDbDashboardTotals(): Promise<AppSnapshot["dashboard"]> 
   const invoices = await prisma.invoice.findMany({
     include: { lines: true },
     where: {
+      account: { code: { startsWith: "120" } },
       docDate: { gte: dateFromString(yearStart) },
       isEffective: true,
       status: "APPROVED",

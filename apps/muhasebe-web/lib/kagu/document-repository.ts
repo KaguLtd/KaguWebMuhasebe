@@ -625,9 +625,16 @@ export async function listDbInvoiceDeliveryNoteCandidates(query: ListQuery = {})
   });
 
   const blockedSourceIds = await getSourceIdsInActiveMerge(prisma, rows.map((row) => row.id));
+  const blockedDraftLineIds = await getDraftLinkedDeliveryLineIds(
+    rows.flatMap((row) => row.lines.map((line) => line.id)),
+  );
 
   return rows
-    .filter((row) => !blockedSourceIds.has(row.id))
+    .filter(
+      (row) =>
+        !blockedSourceIds.has(row.id) &&
+        !row.lines.some((line) => blockedDraftLineIds.has(line.id)),
+    )
     .map((row) => ({
       ...deliveryHeaderRecord(row),
       line_count: row.lines.length,
@@ -642,7 +649,16 @@ export async function importDbDeliveryNoteToInvoiceDraft(
   actorUserId: string,
 ) {
   const deliveryNote = await prisma.deliveryNote.findUnique({
-    include: { account: true, lines: true },
+    include: {
+      account: true,
+      lines: {
+        include: {
+          item: {
+            include: { defaultVatRate: true },
+          },
+        },
+      },
+    },
     where: { id: deliveryNoteId },
   });
 
@@ -695,11 +711,41 @@ export async function importDbDeliveryNoteToInvoiceDraft(
             ? sourceIdsByLineId.get(line.id)
             : [line.id],
         unitPriceMinor: line.unitPriceMinor,
-        vatRateBps: line.vatRateBps,
+        vatRateBps: line.item.defaultVatRate.rateBps,
       })),
     },
     actorUserId,
   );
+}
+
+async function getDraftLinkedDeliveryLineIds(deliveryLineIds: string[]) {
+  if (!deliveryLineIds.length) {
+    return new Set<string>();
+  }
+
+  const rows = await prisma.invoiceLine.findMany({
+    select: { deliveryNoteLineId: true, sourceDeliveryLineIds: true },
+    where: {
+      invoice: { status: DbDocumentStatus.DRAFT },
+      OR: [
+        { deliveryNoteLineId: { in: deliveryLineIds } },
+        { sourceDeliveryLineIds: { hasSome: deliveryLineIds } },
+      ],
+    },
+  });
+  const blocked = new Set<string>();
+
+  for (const row of rows) {
+    if (row.deliveryNoteLineId) {
+      blocked.add(row.deliveryNoteLineId);
+    }
+
+    for (const sourceLineId of row.sourceDeliveryLineIds) {
+      blocked.add(sourceLineId);
+    }
+  }
+
+  return blocked;
 }
 
 export async function getDbInvoiceMetrics(invoiceId: string): Promise<InvoiceMetrics | null> {

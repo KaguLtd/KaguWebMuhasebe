@@ -253,7 +253,7 @@ export const documentModules: DocumentModuleConfig[] = [
       { name: "projectId", label: "Proje", type: "select", lookupEntity: "projects" },
       { name: "invoiceKind", label: "Fatura Türü", type: "select", required: true, options: invoiceKindOptions },
       { name: "invoiceType", label: "Fatura Tipi", type: "select", required: true, options: invoiceTypeOptions },
-      { name: "actualDocNo", label: "Harici Evrak No", type: "text" },
+      { name: "actualDocNo", label: "Harici Evrak No", type: "text", required: true },
       { name: "warehouseId", label: "Depo", type: "select", required: true, lookupEntity: "warehouses" },
       { name: "docDate", label: "Tarih", type: "date", required: true },
       { name: "currency", label: "Para Birimi", type: "select", required: true, options: currencyOptions },
