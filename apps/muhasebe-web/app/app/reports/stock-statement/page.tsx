@@ -42,16 +42,14 @@ export default async function StockStatementPrintPage({ searchParams }: PageProp
       <ReportPrintTable>
         <thead>
           <tr>
-            <th style={{ width: "7%" }}>Tarih</th>
-            <th style={{ width: "9%" }}>Fis No</th>
-            <th style={{ width: "12%" }}>Fis Turu</th>
-            <th style={{ width: "13%" }}>Cari</th>
-            <th style={{ width: "10%" }}>Proje</th>
-            <th style={{ width: "9%" }}>Depo</th>
-            <th style={{ width: "8%" }}>Malzeme Kodu</th>
-            <th style={{ width: "13%" }}>Malzeme</th>
-            <th style={{ width: "6%" }}>Giris</th>
-            <th style={{ width: "6%" }}>Cikis</th>
+            <th style={{ width: "8%" }}>Tarih</th>
+            <th style={{ width: "11%" }}>Fis No</th>
+            <th style={{ width: "14%" }}>Fis Turu</th>
+            <th style={{ width: "15%" }}>Cari</th>
+            <th style={{ width: "13%" }}>Proje</th>
+            <th style={{ width: "18%" }}>Malzeme</th>
+            <th style={{ width: "7%" }}>Giriş</th>
+            <th style={{ width: "7%" }}>Çıkış</th>
             <th style={{ width: "7%" }}>Bakiye</th>
           </tr>
         </thead>
@@ -63,8 +61,6 @@ export default async function StockStatementPrintPage({ searchParams }: PageProp
               <td>{row.voucherTypeLabel}</td>
               <td>{row.accountLabel ?? "-"}</td>
               <td>{row.projectLabel ?? "-"}</td>
-              <td>{row.warehouseLabel}</td>
-              <td>{row.itemCode}</td>
               <td>{row.itemName}</td>
               <td className="kagu-report-num">{formatReportQuantity(row.qtyIn)}</td>
               <td className="kagu-report-num">{formatReportQuantity(row.qtyOut)}</td>
@@ -75,7 +71,7 @@ export default async function StockStatementPrintPage({ searchParams }: PageProp
           ))}
           {!report.rows.length ? (
             <tr>
-              <td className="kagu-report-empty" colSpan={11}>
+              <td className="kagu-report-empty" colSpan={9}>
                 Bu tarih araliginda stok hareketi bulunamadi.
               </td>
             </tr>
@@ -83,7 +79,7 @@ export default async function StockStatementPrintPage({ searchParams }: PageProp
         </tbody>
         <tfoot>
           <tr className="kagu-report-total-row">
-            <td colSpan={8}>Toplam</td>
+            <td colSpan={6}>Toplam</td>
             <td className="kagu-report-num">{formatReportQuantity(report.summary.totalQtyIn)}</td>
             <td className="kagu-report-num">{formatReportQuantity(report.summary.totalQtyOut)}</td>
             <td />
@@ -99,8 +95,7 @@ function recordLabel(record: Record<string, unknown> | null) {
     return undefined;
   }
 
-  const code = typeof record.code === "string" ? record.code : "";
   const name = typeof record.name === "string" ? record.name : "";
 
-  return code ? `${code} / ${name}` : name || undefined;
+  return name || undefined;
 }

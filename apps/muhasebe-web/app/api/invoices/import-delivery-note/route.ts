@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const payload = await parseJsonObject(request);
     const deliveryNoteId = requireStringId(
       payload.deliveryNoteId,
-      "Irsaliye secimi zorunludur",
+      "İrsaliye seçimi zorunludur",
     );
 
     return NextResponse.json(

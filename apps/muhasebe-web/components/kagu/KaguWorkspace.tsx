@@ -20,13 +20,12 @@ import {
   Card,
   Col,
   ConfigProvider,
-  Descriptions,
   Layout,
   Menu,
   Row,
   Space,
   Spin,
-  Statistic,
+  Table,
   Tabs,
   Typography,
 } from "antd";
@@ -93,7 +92,7 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
       } catch (error) {
         setBootstrap(null);
         setBootstrapError(
-          error instanceof Error ? error.message : "Bootstrap verisi alinamadi",
+          error instanceof Error ? error.message : "Bootstrap verisi alınamadı",
         );
         setLookups({});
       } finally {
@@ -110,7 +109,7 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
       setBootstrapError(null);
     } catch (error) {
       setBootstrapError(
-        error instanceof Error ? error.message : "Bootstrap verisi alinamadi",
+            error instanceof Error ? error.message : "Bootstrap verisi alınamadı",
       );
     }
   }
@@ -157,7 +156,7 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
       } catch (error) {
         if (active) {
           setBootstrapError(
-            error instanceof Error ? error.message : "Lookup verisi alinamadi",
+            error instanceof Error ? error.message : "Lookup verisi alınamadı",
           );
         }
       }
@@ -250,7 +249,7 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
                 </Typography.Title>
               </div>
               <Space wrap>
-                <Button onClick={handleLogout}>Cikis</Button>
+                <Button onClick={handleLogout}>Çıkış</Button>
               </Space>
             </Header>
             <Content className="kagu-content">
@@ -263,7 +262,7 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
                 <Alert
                   description={bootstrapError}
                   showIcon
-                  title="Veritabani baglantisi gerekli"
+                  title="Veritabanı bağlantısı gerekli"
                   type="warning"
                 />
               ) : null}
@@ -309,88 +308,61 @@ export function KaguWorkspace({ initialMenu = "dashboard" }: KaguWorkspaceProps)
 }
 
 function DashboardPane({ bootstrap }: { bootstrap: BootstrapPayload | null }) {
-  const metrics = bootstrap?.metrics ?? [];
+  const totals = bootstrap?.dashboard.invoiceTotalsByCurrency ?? emptyInvoiceTotalsByCurrency();
 
   return (
     <Space orientation="vertical" size={18} style={{ width: "100%" }}>
       <Row gutter={[16, 16]}>
-        {metrics.map((metric) => (
-          <Col key={metric.key} lg={6} md={12} xs={24}>
-            <Card className="kagu-card">
-              <Statistic title={metric.label} value={metric.value} />
-            </Card>
+        {(["TRY", "USD", "EUR", "GBP"] as Currency[]).map((currency) => (
+          <Col key={currency} lg={12} md={12} xs={24}>
+            <CurrencyInvoiceTotalsCard currency={currency} totals={totals[currency]} />
           </Col>
         ))}
-      </Row>
-      <Row gutter={[16, 16]}>
-        <Col lg={6} md={12} xs={24}>
-          <CurrencyBreakdownCard
-            title="Gunluk Satis"
-            totals={bootstrap?.dashboard.dailySalesByCurrency}
-          />
-        </Col>
-        <Col lg={6} md={12} xs={24}>
-          <CurrencyBreakdownCard
-            title="Haftalik Satis"
-            totals={bootstrap?.dashboard.weeklySalesByCurrency}
-          />
-        </Col>
-        <Col lg={6} md={12} xs={24}>
-          <CurrencyBreakdownCard
-            title="Aylik Satis"
-            totals={bootstrap?.dashboard.monthlySalesByCurrency}
-          />
-        </Col>
-        <Col lg={6} md={12} xs={24}>
-          <CurrencyBreakdownCard
-            title="Mevcut Stok"
-            totals={bootstrap?.dashboard.inventoryTotalByCurrency}
-          />
-        </Col>
       </Row>
     </Space>
   );
 }
 
-function CurrencyBreakdownCard({
-  title,
+function CurrencyInvoiceTotalsCard({
+  currency,
   totals,
 }: {
-  title: string;
-  totals?: Record<Currency, number>;
+  currency: Currency;
+  totals: { monthlyMinor: number; weeklyMinor: number; yearlyMinor: number };
 }) {
-  const nonZeroEntries = Object.entries(totals ?? {})
-    .filter(([, amount]) => Math.abs(amount) > 0)
-    .map(([currency, amount]) => [currency as Currency, amount] as const);
-
-  if (nonZeroEntries.length === 1) {
-    const [currency, amount] = nonZeroEntries[0];
-
-    return (
-      <Card className="kagu-card">
-        <Statistic title={title} value={formatMinor(amount, currency)} />
-      </Card>
-    );
-  }
-
   return (
-    <Card className="kagu-card">
-      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-        <Typography.Text strong>{title}</Typography.Text>
-        {nonZeroEntries.length ? (
-          <Descriptions column={1} size="small">
-            {nonZeroEntries.map(([currency, amount]) => (
-              <Descriptions.Item key={currency} label={`${currency} toplam`}>
-                {formatMinor(amount, currency)}
-              </Descriptions.Item>
-            ))}
-          </Descriptions>
-        ) : (
-          <Typography.Text>0</Typography.Text>
-        )}
-      </Space>
+    <Card className="kagu-card" size="small" title={currency}>
+      <Table
+        columns={[
+          { dataIndex: "period", key: "period", title: "Dönem" },
+          {
+            align: "right",
+            dataIndex: "amount",
+            key: "amount",
+            render: (value: number) => formatMinor(value, currency),
+            title: "Toplam",
+          },
+        ]}
+        dataSource={[
+          { amount: totals.weeklyMinor, key: "weekly", period: "Haftalık" },
+          { amount: totals.monthlyMinor, key: "monthly", period: "Aylık" },
+          { amount: totals.yearlyMinor, key: "yearly", period: "Yıllık" },
+        ]}
+        pagination={false}
+        rowKey="key"
+        size="small"
+      />
     </Card>
   );
+}
+
+function emptyInvoiceTotalsByCurrency(): BootstrapPayload["dashboard"]["invoiceTotalsByCurrency"] {
+  return {
+    TRY: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+    USD: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+    EUR: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+    GBP: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+  };
 }
 
 function SettingsPane({

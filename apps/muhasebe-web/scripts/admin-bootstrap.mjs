@@ -1,26 +1,18 @@
 import { PrismaClient } from "@prisma/client";
 
 import {
+  DEFAULT_ADMIN_USERNAME,
   ensureAdminPermissions,
   ensureAdminRole,
   ensureAdminUser,
+  ensureDefaultAdminUser,
 } from "./admin-bootstrap-shared.mjs";
 
 const prisma = new PrismaClient();
 
-function requiredEnv(name) {
-  const value = process.env[name]?.trim();
-
-  if (!value) {
-    throw new Error(`${name} is required`);
-  }
-
-  return value;
-}
-
 async function main() {
-  const username = requiredEnv("ADMIN_USERNAME");
-  const password = requiredEnv("ADMIN_PASSWORD");
+  const username = process.env.ADMIN_USERNAME?.trim() || DEFAULT_ADMIN_USERNAME;
+  const password = process.env.ADMIN_PASSWORD?.trim();
   const fullName = process.env.ADMIN_FULL_NAME;
 
   const adminRole = await ensureAdminRole(prisma);
@@ -29,12 +21,21 @@ async function main() {
   await ensureAdminPermissions(prisma, adminRole.id);
   console.log("permissions synced");
 
-  await ensureAdminUser(prisma, {
-    adminRoleId: adminRole.id,
-    fullName,
-    password,
-    username,
-  });
+  if (password) {
+    await ensureAdminUser(prisma, {
+      adminRoleId: adminRole.id,
+      fullName,
+      password,
+      username,
+    });
+  } else {
+    await ensureDefaultAdminUser(prisma, {
+      adminRoleId: adminRole.id,
+      displayName: fullName?.trim() || undefined,
+      username,
+    });
+  }
+
   console.log(`admin user ready: ${username}`);
 }
 

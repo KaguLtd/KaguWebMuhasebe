@@ -44,8 +44,8 @@ export default async function ProjectMaterialUsagePrintPage({ searchParams }: Pa
             <th style={{ width: "14%" }}>Malzeme Kodu</th>
             <th style={{ width: "32%" }}>Malzeme</th>
             <th style={{ width: "9%" }}>Birim</th>
-            <th style={{ width: "11%" }}>Giris</th>
-            <th style={{ width: "11%" }}>Cikis</th>
+            <th style={{ width: "11%" }}>Giriş</th>
+            <th style={{ width: "11%" }}>Çıkış</th>
             <th style={{ width: "13%" }}>Net Kullanim</th>
             <th style={{ width: "10%" }}>Hareket Sayisi</th>
           </tr>
@@ -82,7 +82,7 @@ function projectMeta(project: Record<string, unknown>, params: { dateFrom?: stri
 }
 
 function projectLabel(project: Record<string, unknown>) {
-  return `${String(project.code ?? "")} / ${String(project.name ?? "")}`;
+  return String(project.name ?? "");
 }
 
 function emptyRow(colSpan: number, text: string) {

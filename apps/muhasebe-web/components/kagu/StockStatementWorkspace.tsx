@@ -1,23 +1,35 @@
 "use client";
 
-import { Button, Card, DatePicker, Select, Space, Table } from "antd";
+import { App, Button, Card, DatePicker, Empty, Select, Space, Table } from "antd";
 import dayjs from "dayjs";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import type { LookupEntity, LookupItem } from "@/lib/kagu/contracts";
-import { formatDate, selectableLookupOptions } from "@/lib/kagu/helpers";
+import { fetchStockStatement } from "@/lib/kagu/api";
+import type { LookupEntity, LookupItem, StockStatementReport } from "@/lib/kagu/contracts";
+import { formatDate, formatQuantity, selectableLookupOptions } from "@/lib/kagu/helpers";
 
 type LookupMap = Partial<Record<LookupEntity, LookupItem[]>>;
 
 export function StockStatementWorkspace({ lookups }: { lookups: LookupMap }) {
-  const [accountId, setAccountId] = useState<string>();
-  const [projectId, setProjectId] = useState<string>();
-  const [warehouseId, setWarehouseId] = useState<string>();
-  const [itemId, setItemId] = useState<string>();
+  const { message } = App.useApp();
+  const [accountId, setAccountId] = useState<string | undefined>(
+    () => initialSearchParam("accountId"),
+  );
+  const [projectId, setProjectId] = useState<string | undefined>(
+    () => initialSearchParam("projectId"),
+  );
+  const [warehouseId, setWarehouseId] = useState<string | undefined>(
+    () => initialSearchParam("warehouseId"),
+  );
+  const [itemId, setItemId] = useState<string | undefined>(
+    () => initialSearchParam("itemId"),
+  );
   const [dateRange, setDateRange] = useState<[string | undefined, string | undefined]>([
-    dayjs().startOf("month").format("YYYY-MM-DD"),
-    dayjs().format("YYYY-MM-DD"),
+    initialSearchParam("dateFrom") ?? dayjs().startOf("month").format("YYYY-MM-DD"),
+    initialSearchParam("dateTo") ?? dayjs().format("YYYY-MM-DD"),
   ]);
+  const [loading, setLoading] = useState(false);
+  const [report, setReport] = useState<StockStatementReport | null>(null);
   const accountOptions = useMemo(
     () => selectableLookupOptions(lookups.accounts, accountId),
     [accountId, lookups.accounts],
@@ -34,24 +46,46 @@ export function StockStatementWorkspace({ lookups }: { lookups: LookupMap }) {
     () => selectableLookupOptions(lookups.items, itemId),
     [itemId, lookups.items],
   );
-
-  function openPrint() {
-    const params = new URLSearchParams();
-
-    for (const [key, value] of Object.entries({
+  const query = useMemo(
+    () => ({
       accountId,
       dateFrom: dateRange[0],
       dateTo: dateRange[1],
       itemId,
       projectId,
       warehouseId,
-    })) {
+    }),
+    [accountId, dateRange, itemId, projectId, warehouseId],
+  );
+
+  useEffect(() => {
+    void loadReport();
+    // Initial URL filters should show a preview without another click.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function openPrint() {
+    const params = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(query)) {
       if (value) {
         params.set(key, value);
       }
     }
 
     window.open(`/app/reports/stock-statement?${params.toString()}`, "_blank");
+  }
+
+  async function loadReport() {
+    setLoading(true);
+
+    try {
+      setReport(await fetchStockStatement(query));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Stok ekstresi getirilemedi");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -107,8 +141,11 @@ export function StockStatementWorkspace({ lookups }: { lookups: LookupMap }) {
             style={{ minWidth: 240 }}
             value={itemId}
           />
+          <Button loading={loading} onClick={() => void loadReport()}>
+            Filtrele
+          </Button>
           <Button onClick={openPrint} type="primary">
-            PDF / Yazdir
+            PDF / Yazdır
           </Button>
         </Space>
         <Table
@@ -128,6 +165,44 @@ export function StockStatementWorkspace({ lookups }: { lookups: LookupMap }) {
           rowKey="key"
           size="small"
         />
+        <Table
+          columns={[
+            { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih", width: 104 },
+            { dataIndex: "displayDocNo", key: "displayDocNo", title: "Fis No", width: 140 },
+            { dataIndex: "voucherTypeLabel", key: "voucherTypeLabel", title: "Fis Turu", width: 180 },
+            { dataIndex: "accountLabel", key: "accountLabel", title: "Cari", width: 220 },
+            { dataIndex: "projectLabel", key: "projectLabel", title: "Proje", width: 200 },
+            { dataIndex: "itemName", key: "itemName", title: "Malzeme", width: 240 },
+            {
+              dataIndex: "qtyIn",
+              key: "qtyIn",
+              render: (value: unknown) => formatQuantity(value),
+              title: "Giriş",
+              width: 100,
+            },
+            {
+              dataIndex: "qtyOut",
+              key: "qtyOut",
+              render: (value: unknown) => formatQuantity(value),
+              title: "Çıkış",
+              width: 100,
+            },
+            {
+              dataIndex: "runningBalance",
+              key: "runningBalance",
+              render: (value: unknown) => formatQuantity(value),
+              title: "Bakiye",
+              width: 110,
+            },
+          ]}
+          dataSource={report?.rows ?? []}
+          loading={loading}
+          locale={{ emptyText: <Empty description="Filtreye uygun stok hareketi yok" /> }}
+          pagination={{ pageSize: 20 }}
+          rowKey="id"
+          scroll={{ x: 1394 }}
+          size="small"
+        />
       </Space>
     </Card>
   );
@@ -135,4 +210,12 @@ export function StockStatementWorkspace({ lookups }: { lookups: LookupMap }) {
 
 function selectedLabel(options: Array<{ label: string; value: string }>, value?: string) {
   return options.find((option) => option.value === value)?.label ?? "-";
+}
+
+function initialSearchParam(key: string) {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return new URLSearchParams(window.location.search).get(key) ?? undefined;
 }

@@ -4,6 +4,11 @@ import { promisify } from "node:util";
 const scrypt = promisify(scryptCallback);
 const KEY_LENGTH = 64;
 
+export const DEFAULT_ADMIN_USERNAME = "ahmetcan";
+export const DEFAULT_ADMIN_DISPLAY_NAME = "Ahmet Can";
+export const DEFAULT_ADMIN_PASSWORD_HASH =
+  "scrypt$c80a481357514f1deeddb74227ae3211$f9c457100b780fcd93af19ed715aa73cf894e1bf14106fde4a543a311705b90bfd362d49ff6f116ee2524adec80cc8cdf1bd65dc4dc06e3fd9156c0388b64ed8";
+
 export const SYSTEM_PERMISSIONS = [
   {
     description: "Create, update, and deactivate users.",
@@ -147,6 +152,37 @@ export async function ensureAdminUser(
           email: email ?? null,
           isActive: true,
           passwordHash,
+          username,
+        },
+      });
+
+  await prisma.userRole.createMany({
+    data: [{ roleId: adminRoleId, userId: adminUser.id }],
+    skipDuplicates: true,
+  });
+
+  return adminUser;
+}
+
+export async function ensureDefaultAdminUser(
+  prisma,
+  { adminRoleId, displayName = DEFAULT_ADMIN_DISPLAY_NAME, username = DEFAULT_ADMIN_USERNAME },
+) {
+  const existing = await prisma.user.findUnique({ where: { username } });
+  const adminUser = existing
+    ? await prisma.user.update({
+        where: { username },
+        data: {
+          displayName: existing.displayName || displayName,
+          isActive: true,
+        },
+      })
+    : await prisma.user.create({
+        data: {
+          displayName,
+          email: null,
+          isActive: true,
+          passwordHash: DEFAULT_ADMIN_PASSWORD_HASH,
           username,
         },
       });

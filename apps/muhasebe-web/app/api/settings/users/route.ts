@@ -13,12 +13,12 @@ export async function GET() {
     await requirePermissions(
       user,
       routePermissions.settingsUsersRead(),
-      "Kullanici listesini gorme yetkiniz yok",
+      "Kullanıcı listesini görme yetkiniz yok",
     );
 
     return NextResponse.json({ items: await listUsers() });
   } catch (error) {
-    return jsonBadRequest(error, "Kullanicilar listelenemedi");
+    return jsonBadRequest(error, "Kullanıcılar listelenemedi");
   }
 }
 
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     await requirePermissions(
       user,
       routePermissions.settingsUsersWrite(),
-      "Kullanici olusturma yetkiniz yok",
+      "Kullanıcı oluşturma yetkiniz yok",
     );
 
     const payload = await parseUserPayload(request);
@@ -45,6 +45,6 @@ export async function POST(request: Request) {
       }),
     });
   } catch (error) {
-    return jsonBadRequest(error, "Kullanici olusturulamadi");
+    return jsonBadRequest(error, "Kullanıcı oluşturulamadı");
   }
 }

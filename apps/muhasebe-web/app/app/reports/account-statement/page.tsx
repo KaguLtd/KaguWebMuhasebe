@@ -43,9 +43,7 @@ export default async function AccountStatementPrintPage({
   const currency = typeof report.account.currency === "string"
     ? report.account.currency
     : "TRY";
-  const accountTitle = `${String(report.account.code ?? "")} / ${String(
-    report.account.name ?? "",
-  )}`;
+  const accountTitle = String(report.account.name ?? "");
 
   return (
     <ReportPrintLayout actions={<StatementPrintButton />}>
@@ -67,7 +65,7 @@ export default async function AccountStatementPrintPage({
               <th style={{ width: "10%" }}>Tarih</th>
               <th style={{ width: "14%" }}>Fis No</th>
               <th style={{ width: "14%" }}>Fis Turu</th>
-              <th style={{ width: "30%" }}>Aciklama</th>
+              <th style={{ width: "30%" }}>Açıklama</th>
               <th style={{ width: "10%" }}>Borc</th>
               <th style={{ width: "10%" }}>Alacak</th>
               <th style={{ width: "12%" }}>Bakiye</th>

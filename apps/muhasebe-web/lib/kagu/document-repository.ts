@@ -446,7 +446,7 @@ export async function createDbMergedDeliveryNoteDraft(
     const sourceIds = [...new Set(sourceDeliveryNoteIds.map((id) => id.trim()).filter(Boolean))];
 
     if (sourceIds.length < 2) {
-      throw new Error("Birlesim icin en az iki irsaliye secilmelidir");
+      throw new Error("Birleşim için en az iki irsaliye seçilmelidir");
     }
 
     const sources = await tx.deliveryNote.findMany({
@@ -1264,14 +1264,14 @@ function validateApproval(entity: DocumentEntity, header: DataRecord, lines: Dat
   }
 
   if (entity === "deliveryNotes" && !header.warehouse_id) {
-    throw new Error("Depo secimi zorunludur");
+    throw new Error("Depo seçimi zorunludur");
   }
 
   if (entity === "invoices") {
     const hasDirectInvoiceLines = lines.some((line) => !hasDeliveryLink(line));
 
     if (header.invoice_kind === "SALES" && hasDirectInvoiceLines && !header.warehouse_id) {
-      throw new Error("Depo secimi zorunludur");
+      throw new Error("Depo seçimi zorunludur");
     }
   }
 
@@ -1338,7 +1338,7 @@ async function postDocument(
         creditMinor: isSales ? 0 : totalMinor,
         currency: currency(header.currency),
         debitMinor: isSales ? totalMinor : 0,
-        description: isSales ? "Satis faturasi" : "Alis faturasi",
+        description: isSales ? "Satış faturası" : "Alış faturası",
         docDate,
         docId: String(header.id),
         docNo,
@@ -1644,8 +1644,8 @@ async function describeTransferSide(
     fromAccountId ? tx.account.findUnique({ where: { id: fromAccountId } }) : null,
     toAccountId ? tx.account.findUnique({ where: { id: toAccountId } }) : null,
   ]);
-  const targetLabel = toAccount ? `${toAccount.code} - ${toAccount.name}` : toAccountId;
-  const sourceLabel = fromAccount ? `${fromAccount.code} - ${fromAccount.name}` : fromAccountId;
+  const targetLabel = toAccount ? toAccount.name : toAccountId;
+  const sourceLabel = fromAccount ? fromAccount.name : fromAccountId;
   const note = nullableString(header.description);
 
   return side === "OUT"
@@ -1783,11 +1783,11 @@ export function assertDeliveryDirectionAllowedForAccount(
   const direction = String(header.direction ?? header.delivery_direction ?? "");
 
   if (accountKind === "CUSTOMER" && direction !== "OUT") {
-    throw new Error("Musteri carilerde yalnizca cikis irsaliyesi kesilebilir.");
+    throw new Error("Müşteri carilerde yalnızca çıkış irsaliyesi kesilebilir.");
   }
 
   if (accountKind === "SUPPLIER" && direction !== "IN") {
-    throw new Error("Tedarikci carilerde yalnizca giris irsaliyesi kesilebilir.");
+    throw new Error("Tedarikçi carilerde yalnızca giriş irsaliyesi kesilebilir.");
   }
 }
 
@@ -2095,11 +2095,11 @@ function resolveInvoiceKindForDeliveryImport(
   const invoiceKind = resolveInvoiceKindForAccount(accountKind, requestedInvoiceKind);
 
   if (invoiceKind === "SALES" && stockDirection !== "OUT") {
-    throw new Error("Satis faturasi yalnizca OUT etkili irsaliyeyi aktarabilir");
+    throw new Error("Satış faturası yalnızca OUT etkili irsaliyeyi aktarabilir");
   }
 
   if (invoiceKind === "PURCHASE" && stockDirection !== "IN") {
-    throw new Error("Alis faturasi yalnizca IN etkili irsaliyeyi aktarabilir");
+    throw new Error("Alış faturası yalnızca IN etkili irsaliyeyi aktarabilir");
   }
 
   return invoiceKind;
@@ -2118,7 +2118,7 @@ function resolveInvoiceKindForAccount(
   }
 
   if (accountKind === "BOTH" && requestedInvoiceKind !== "SALES" && requestedInvoiceKind !== "PURCHASE") {
-    throw new Error("BOTH cari icin fatura turu secilmelidir");
+    throw new Error("BOTH cari için fatura türü seçilmelidir");
   }
 
   return requestedInvoiceKind === "PURCHASE" ? "PURCHASE" : "SALES";
@@ -2177,11 +2177,11 @@ async function assertInvoiceDeliveryLinksCanApprove(
 
     const importDirection = deliveryImportDirection(header);
     if (invoiceHeader.invoice_kind === "SALES" && importDirection !== "OUT") {
-      throw new Error("Satis faturasi yalnizca OUT etkili irsaliye aktarabilir");
+      throw new Error("Satış faturası yalnızca OUT etkili irsaliye aktarabilir");
     }
 
     if (invoiceHeader.invoice_kind === "PURCHASE" && importDirection !== "IN") {
-      throw new Error("Alis faturasi yalnizca IN etkili irsaliye aktarabilir");
+      throw new Error("Alış faturası yalnızca IN etkili irsaliye aktarabilir");
     }
   }
 }

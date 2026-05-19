@@ -92,5 +92,5 @@ export default async function ProjectInvoicesPrintPage({ searchParams }: PagePro
 }
 
 function projectLabel(project: Record<string, unknown>) {
-  return `${String(project.code ?? "")} / ${String(project.name ?? "")}`;
+  return String(project.name ?? "");
 }

@@ -12,6 +12,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return jsonBadRequest(error, "Giris yapilamadi");
+    return jsonBadRequest(error, "Giriş yapılamadı");
   }
 }

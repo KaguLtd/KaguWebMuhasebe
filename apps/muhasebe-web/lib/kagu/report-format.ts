@@ -44,11 +44,11 @@ export function formatBalanceWithSide(value: unknown, currency?: Currency | stri
 }
 
 export function invoiceKindLabel(kind: unknown) {
-  return kind === "PURCHASE" ? "Alis Faturasi" : "Satis Faturasi";
+  return kind === "PURCHASE" ? "Alış Faturası" : "Satış Faturası";
 }
 
 export function receiptKindLabel(kind: unknown) {
-  return kind === "PAYMENT" ? "Odeme" : "Tahsilat";
+  return kind === "PAYMENT" ? "Ödeme" : "Tahsilat";
 }
 
 export function deliveryNoteLabel(input: {
@@ -62,11 +62,11 @@ export function deliveryNoteLabel(input: {
   const base =
     direction === "IN"
       ? isReturn
-        ? "Giris Iade Irsaliyesi"
-        : "Giris Irsaliyesi"
+        ? "Giriş İade İrsaliyesi"
+        : "Giriş İrsaliyesi"
       : isReturn
-        ? "Cikis Iade Irsaliyesi"
-        : "Cikis Irsaliyesi";
+        ? "Çıkış İade İrsaliyesi"
+        : "Çıkış İrsaliyesi";
 
   if (input.invoicedByInvoiceId) {
     return `F-Irsaliye / ${base}`;
@@ -81,11 +81,11 @@ export function deliveryNoteLabel(input: {
 
 export function voucherTypeLabel(docType: string) {
   if (docType.startsWith("SALES_INVOICE")) {
-    return "Satis Faturasi";
+    return "Satış Faturası";
   }
 
   if (docType.startsWith("PURCHASE_INVOICE")) {
-    return "Alis Faturasi";
+    return "Alış Faturası";
   }
 
   if (docType === "RECEIPT_COLLECTION") {
@@ -93,7 +93,7 @@ export function voucherTypeLabel(docType: string) {
   }
 
   if (docType === "RECEIPT_PAYMENT") {
-    return "Odeme";
+    return "Ödeme";
   }
 
   if (docType === "TRANSFER") {
@@ -102,11 +102,11 @@ export function voucherTypeLabel(docType: string) {
 
   if (docType.startsWith("DELIVERY_NOTE")) {
     if (docType.includes("_IN")) {
-      return "Giris Irsaliyesi";
+      return "Giriş İrsaliyesi";
     }
 
     if (docType.includes("_OUT")) {
-      return "Cikis Irsaliyesi";
+      return "Çıkış İrsaliyesi";
     }
   }
 

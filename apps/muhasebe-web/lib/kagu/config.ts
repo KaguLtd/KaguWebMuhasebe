@@ -47,36 +47,36 @@ export const currencyOptions = [
 ];
 
 export const accountKindOptions = [
-  { label: "Musteri", value: "CUSTOMER" },
-  { label: "Tedarikci", value: "SUPPLIER" },
-  { label: "Her Ikisi", value: "BOTH" },
+  { label: "Müşteri", value: "CUSTOMER" },
+  { label: "Tedarikçi", value: "SUPPLIER" },
+  { label: "Her İkisi", value: "BOTH" },
 ];
 
 export const documentStatusOptions = [
   { label: "Taslak", value: "DRAFT" },
-  { label: "Onayli", value: "APPROVED" },
-  { label: "Degistirildi", value: "SUPERSEDED" },
-  { label: "Iptal", value: "VOID" },
+  { label: "Onaylı", value: "APPROVED" },
+  { label: "Değiştirildi", value: "SUPERSEDED" },
+  { label: "İptal", value: "VOID" },
 ];
 
 export const directionOptions = [
-  { label: "Giris", value: "IN" },
-  { label: "Cikis", value: "OUT" },
+  { label: "Giriş", value: "IN" },
+  { label: "Çıkış", value: "OUT" },
 ];
 
 export const invoiceKindOptions = [
-  { label: "Satis", value: "SALES" },
-  { label: "Alis", value: "PURCHASE" },
+  { label: "Satış", value: "SALES" },
+  { label: "Alış", value: "PURCHASE" },
 ];
 
 export const invoiceTypeOptions = [
   { label: "Standart", value: "STANDARD" },
-  { label: "Yildiz", value: "STAR" },
+  { label: "Yıldız", value: "STAR" },
 ];
 
 export const receiptKindOptions = [
   { label: "Tahsilat", value: "COLLECTION" },
-  { label: "Odeme", value: "PAYMENT" },
+  { label: "Ödeme", value: "PAYMENT" },
 ];
 
 export const masterModules: MasterModuleConfig[] = [
@@ -150,27 +150,27 @@ export const masterModules: MasterModuleConfig[] = [
   },
   {
     key: "itemClasses",
-    title: "Malzeme Siniflari",
+    title: "Malzeme Sınıfları",
     entity: "itemClasses",
     columns: [
-      { key: "name", title: "Sinif" },
+      { key: "name", title: "Sınıf" },
       { key: "is_active", title: "Durum" },
     ],
     fields: [
-      { name: "name", label: "Sinif", type: "text", required: true },
+      { name: "name", label: "Sınıf", type: "text", required: true },
       { name: "isActive", label: "Aktif", type: "switch" },
     ],
   },
   {
     key: "vatRates",
-    title: "KDV Tanimlari",
+    title: "KDV Tanımları",
     entity: "vatRates",
     columns: [
-      { key: "rate_bps", title: "KDV Orani" },
+      { key: "rate_bps", title: "KDV Oranı" },
       { key: "is_active", title: "Durum" },
     ],
     fields: [
-      { name: "rateBps", label: "KDV Orani", type: "number", required: true, min: 0, step: 1 },
+      { name: "rateBps", label: "KDV Oranı", type: "number", required: true, min: 0, step: 1 },
       { name: "isActive", label: "Aktif", type: "switch" },
     ],
   },
@@ -181,7 +181,7 @@ export const masterModules: MasterModuleConfig[] = [
     columns: [
       { key: "code", title: "Kod" },
       { key: "name", title: "Malzeme" },
-      { key: "class_label", title: "Sinif" },
+      { key: "class_label", title: "Sınıf" },
       { key: "unit_label", title: "Birim" },
       { key: "total_stock", title: "Mevcut Stok" },
       { key: "is_active", title: "Aktif" },
@@ -189,8 +189,8 @@ export const masterModules: MasterModuleConfig[] = [
     fields: [
       { name: "name", label: "Malzeme", type: "text", required: true },
       { name: "unitId", label: "Birim", type: "select", required: true, lookupEntity: "units" },
-      { name: "classId", label: "Sinif", type: "select", required: true, lookupEntity: "itemClasses" },
-      { name: "defaultVatRateId", label: "Varsayilan KDV", type: "select", required: true, lookupEntity: "vatRates" },
+      { name: "classId", label: "Sınıf", type: "select", required: true, lookupEntity: "itemClasses" },
+      { name: "defaultVatRateId", label: "Varsayılan KDV", type: "select", required: true, lookupEntity: "vatRates" },
       { name: "code", label: "Kod", type: "text", required: true },
       { name: "isActive", label: "Aktif", type: "switch" },
     ],
@@ -201,27 +201,28 @@ export const masterModules: MasterModuleConfig[] = [
 export const documentModules: DocumentModuleConfig[] = [
   {
     key: "deliveryNotes",
-    title: "Sevk / Irsaliye",
+    title: "Sevk / İrsaliye",
     entity: "deliveryNotes",
     columns: [
-      { key: "account_id", title: "Cari" },
-      { key: "doc_no", title: "Evrak No" },
-      { key: "actual_doc_no", title: "Harici Evrak No" },
-      { key: "merge_role", title: "Irsaliye Tipi" },
-      { key: "is_return", title: "Iade" },
-      { key: "direction", title: "Hareket Yonu" },
       { key: "doc_date", title: "Tarih" },
+      { key: "account_id", title: "Cari" },
+      { key: "project_id", title: "Proje" },
+      { key: "doc_no", title: "Sistem Evrak No" },
+      { key: "actual_doc_no", title: "Harici Evrak No" },
+      { key: "merge_role", title: "İrsaliye Tipi" },
+      { key: "direction", title: "Hareket Yönü" },
+      { key: "is_return", title: "İade" },
       { key: "status", title: "Durum" },
     ],
     headerFields: [
-      { name: "direction", label: "Hareket Yonu", type: "select", required: true, options: directionOptions },
-      { name: "isReturn", label: "Iade", type: "switch" },
+      { name: "direction", label: "Hareket Yönü", type: "select", required: true, options: directionOptions },
+      { name: "isReturn", label: "İade", type: "switch" },
       { name: "actualDocNo", label: "Harici Evrak No", type: "text", required: true },
       { name: "accountId", label: "Cari", type: "select", required: true, lookupEntity: "accounts" },
       { name: "projectId", label: "Proje", type: "select", lookupEntity: "projects" },
       { name: "warehouseId", label: "Depo", type: "select", required: true, lookupEntity: "warehouses" },
       { name: "docDate", label: "Tarih", type: "date", required: true },
-      { name: "description", label: "Aciklama", type: "textarea" },
+      { name: "description", label: "Açıklama", type: "textarea" },
     ],
     lineFields: [
       { name: "itemId", label: "Malzeme", type: "select", required: true, lookupEntity: "items" },
@@ -237,25 +238,26 @@ export const documentModules: DocumentModuleConfig[] = [
     title: "Faturalar",
     entity: "invoices",
     columns: [
-      { key: "doc_no", title: "Evrak No" },
-      { key: "actual_doc_no", title: "Harici Evrak No" },
+      { key: "doc_date", title: "Tarih" },
       { key: "account_id", title: "Cari" },
       { key: "project_id", title: "Proje" },
-      { key: "doc_date", title: "Tarih" },
-      { key: "invoice_kind", title: "Fatura Turu" },
-      { key: "document_total_minor", title: "Toplam" },
+      { key: "doc_no", title: "Sistem Evrak No" },
+      { key: "actual_doc_no", title: "Harici Evrak No" },
+      { key: "invoice_kind", title: "Fatura Türü" },
       { key: "status", title: "Durum" },
+      { key: "invoice_type", title: "Yıldız" },
+      { key: "document_total_minor", title: "Toplam" },
     ],
     headerFields: [
       { name: "accountId", label: "Cari", type: "select", required: true, lookupEntity: "accounts" },
       { name: "projectId", label: "Proje", type: "select", lookupEntity: "projects" },
-      { name: "invoiceKind", label: "Fatura Turu", type: "select", required: true, options: invoiceKindOptions },
+      { name: "invoiceKind", label: "Fatura Türü", type: "select", required: true, options: invoiceKindOptions },
       { name: "invoiceType", label: "Fatura Tipi", type: "select", required: true, options: invoiceTypeOptions },
       { name: "actualDocNo", label: "Harici Evrak No", type: "text" },
       { name: "warehouseId", label: "Depo", type: "select", required: true, lookupEntity: "warehouses" },
       { name: "docDate", label: "Tarih", type: "date", required: true },
       { name: "currency", label: "Para Birimi", type: "select", required: true, options: currencyOptions },
-      { name: "description", label: "Aciklama", type: "textarea" },
+      { name: "description", label: "Açıklama", type: "textarea" },
     ],
     lineFields: [
       { name: "itemId", label: "Malzeme", type: "select", required: true, lookupEntity: "items" },
@@ -267,25 +269,25 @@ export const documentModules: DocumentModuleConfig[] = [
   },
   {
     key: "receipts",
-    title: "Tahsilat / Odeme",
+    title: "Tahsilat / Ödeme",
     entity: "receipts",
     columns: [
       { key: "account_id", title: "Cari" },
-      { key: "doc_no", title: "Evrak No" },
-      { key: "receipt_kind", title: "Islem Tipi" },
+      { key: "doc_no", title: "Sistem Evrak No" },
+      { key: "receipt_kind", title: "İşlem Tipi" },
       { key: "amount_minor", title: "Tutar" },
       { key: "currency", title: "Para Birimi" },
       { key: "doc_date", title: "Tarih" },
       { key: "status", title: "Durum" },
     ],
     headerFields: [
-      { name: "receiptKind", label: "Islem Tipi", type: "select", required: true, options: receiptKindOptions },
+      { name: "receiptKind", label: "İşlem Tipi", type: "select", required: true, options: receiptKindOptions },
       { name: "accountId", label: "Cari", type: "select", required: true, lookupEntity: "accounts" },
       { name: "projectId", label: "Proje", type: "select", lookupEntity: "projects" },
       { name: "docDate", label: "Tarih", type: "date", required: true },
       { name: "amountMinor", label: "Tutar", type: "number", required: true, moneyMinor: true },
       { name: "currency", label: "Para Birimi", type: "select", required: true, options: currencyOptions },
-      { name: "description", label: "Aciklama", type: "textarea" },
+      { name: "description", label: "Açıklama", type: "textarea" },
     ],
     filterLookups: ["accounts", "projects"],
   },
@@ -294,21 +296,21 @@ export const documentModules: DocumentModuleConfig[] = [
     title: "Virman",
     entity: "transfers",
     columns: [
-      { key: "doc_no", title: "Evrak No" },
-      { key: "from_account_id", title: "Cikis Cari" },
-      { key: "to_account_id", title: "Giris Cari" },
+      { key: "doc_no", title: "Sistem Evrak No" },
+      { key: "from_account_id", title: "Çıkış Cari" },
+      { key: "to_account_id", title: "Giriş Cari" },
       { key: "amount_minor", title: "Tutar" },
       { key: "currency", title: "Para Birimi" },
       { key: "status", title: "Durum" },
     ],
     headerFields: [
-      { name: "fromAccountId", label: "Cikis Cari", type: "select", required: true, lookupEntity: "accounts" },
-      { name: "toAccountId", label: "Giris Cari", type: "select", required: true, lookupEntity: "accounts" },
+      { name: "fromAccountId", label: "Çıkış Cari", type: "select", required: true, lookupEntity: "accounts" },
+      { name: "toAccountId", label: "Giriş Cari", type: "select", required: true, lookupEntity: "accounts" },
       { name: "docDate", label: "Tarih", type: "date", required: true },
       { name: "amountMinor", label: "Tutar", type: "number", required: true, moneyMinor: true },
       { name: "currency", label: "Para Birimi", type: "select", required: true, options: currencyOptions },
-      { name: "crossRate", label: "Capraz Kur Carpani", type: "number", min: 0, step: 0.0001 },
-      { name: "description", label: "Aciklama", type: "textarea" },
+      { name: "crossRate", label: "Çapraz Kur Çarpanı", type: "number", min: 0, step: 0.0001 },
+      { name: "description", label: "Açıklama", type: "textarea" },
     ],
     filterLookups: ["accounts"],
   },
@@ -329,8 +331,8 @@ export const settingsWorkspaceTabs: SettingsWorkspaceTab[] = [
     key: module.key,
     title: module.title,
   })),
-  { key: "periodLock", title: "Donem Kilidi" },
-  { key: "settingsUsers", title: "Kullanicilar" },
+  { key: "periodLock", title: "Dönem Kilidi" },
+  { key: "settingsUsers", title: "Kullanıcılar" },
   { key: "settingsRoles", title: "Roller" },
 ];
 
@@ -339,10 +341,10 @@ export const primaryMasterModules = masterModules.filter(
 );
 
 export const workspaceMenu = [
-  { key: "dashboard", title: "Dashboard" },
+  { key: "dashboard", title: "Panel" },
   ...primaryMasterModules.map((module) => ({ key: module.key, title: module.title })),
   ...documentModules.map((module) => ({ key: module.key, title: module.title })),
   { key: "stockStatement", title: "Stok / Malzeme Ekstresi" },
-  { key: "projectReports", title: "Proje Raporlari" },
+  { key: "projectReports", title: "Proje Raporları" },
   { key: "settings", title: "Ayarlar" },
 ];

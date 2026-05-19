@@ -259,6 +259,26 @@ export function MasterWorkspace({
     window.open(`/app/reports/account-statement?${params.toString()}`, "_blank");
   }
 
+  function openStockStatementPrint() {
+    const id = typeof detailRecord?.id === "string" ? detailRecord.id : null;
+
+    if (!id) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+
+    if (config.entity === "warehouses") {
+      params.set("warehouseId", id);
+    }
+
+    if (config.entity === "items") {
+      params.set("itemId", id);
+    }
+
+    window.open(`/app/stockStatement?${params.toString()}`, "_blank");
+  }
+
   async function handleSave() {
     if (saveInFlightRef.current) {
       return;
@@ -427,7 +447,7 @@ export function MasterWorkspace({
         destroyOnHidden
         onClose={() => setDetailOpen(false)}
         open={detailOpen}
-        size="min(900px, 96vw)"
+        size={detailDrawerSize(config.entity, warehouseDetailMode)}
         title={
           config.entity === "accounts"
             ? `${config.title} Hareketleri`
@@ -438,6 +458,7 @@ export function MasterWorkspace({
           entity={config.entity}
           loading={detailLoading}
           onOpenStatementPrint={openStatementPrint}
+          onOpenStockStatementPrint={openStockStatementPrint}
           onReloadAccountStatement={reloadAccountStatement}
           report={detailReport}
           statementRange={statementRange}
@@ -509,6 +530,18 @@ function masterDrawerSize(entity: MasterEntity) {
   return "min(640px, 90vw)";
 }
 
+function detailDrawerSize(entity: MasterEntity, warehouseDetailMode: WarehouseDetailMode) {
+  if (entity === "warehouses" && warehouseDetailMode === "documents") {
+    return "min(1440px, 96vw)";
+  }
+
+  if (entity === "items") {
+    return "min(1180px, 96vw)";
+  }
+
+  return "min(900px, 96vw)";
+}
+
 function masterListColumnWidth(key: string) {
   if (key === "name" || key.includes("account") || key.includes("item")) {
     return 240;
@@ -537,6 +570,7 @@ function MasterDetailPane({
   entity,
   loading,
   onOpenStatementPrint,
+  onOpenStockStatementPrint,
   onReloadAccountStatement,
   report,
   statementRange,
@@ -546,6 +580,7 @@ function MasterDetailPane({
   entity: MasterEntity;
   loading: boolean;
   onOpenStatementPrint: () => void;
+  onOpenStockStatementPrint: () => void;
   onReloadAccountStatement: (range?: [Dayjs, Dayjs]) => Promise<void>;
   report: MasterDetailReport | null;
   statementRange: [Dayjs, Dayjs];
@@ -592,7 +627,7 @@ function MasterDetailPane({
             Cari Hareketleri
           </Button>
           <Button onClick={onOpenStatementPrint} type="primary">
-            PDF / Yazdir
+            PDF / Yazdır
           </Button>
         </Space>
         <Space wrap>
@@ -609,8 +644,8 @@ function MasterDetailPane({
         <Table
           columns={[
             { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih" },
-            { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
-            { dataIndex: "description", key: "description", title: "Aciklama" },
+            { dataIndex: "docNo", key: "docNo", title: "Sistem Evrak No" },
+            { dataIndex: "description", key: "description", title: "Açıklama" },
             {
               dataIndex: "debitMinor",
               key: "debitMinor",
@@ -680,23 +715,25 @@ function MasterDetailPane({
         </Typography.Title>
         <Table
           columns={[
-            { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih" },
-            { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
-            { dataIndex: "docType", key: "docType", title: "Evrak Tipi" },
-            { dataIndex: "accountLabel", key: "accountLabel", title: "Cari" },
-            { dataIndex: "projectLabel", key: "projectLabel", title: "Proje" },
-            { dataIndex: "itemName", key: "itemName", title: "Malzeme" },
+            { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih", width: 104 },
+            { dataIndex: "docNo", key: "docNo", title: "Sistem No", width: 140 },
+            { dataIndex: "docType", key: "docType", title: "Evrak Tipi", width: 210 },
+            { dataIndex: "accountLabel", key: "accountLabel", title: "Cari", width: 240 },
+            { dataIndex: "projectLabel", key: "projectLabel", title: "Proje", width: 220 },
+            { dataIndex: "itemName", key: "itemName", title: "Malzeme", width: 240 },
             {
               dataIndex: "qtyIn",
               key: "qtyIn",
               render: (value: unknown) => formatQuantity(value),
-              title: "Giris",
+              title: "Giriş",
+              width: 100,
             },
             {
               dataIndex: "qtyOut",
               key: "qtyOut",
               render: (value: unknown) => formatQuantity(value),
-              title: "Cikis",
+              title: "Çıkış",
+              width: 100,
             },
             {
               dataIndex: "status",
@@ -705,6 +742,7 @@ function MasterDetailPane({
                 <DocumentStatusTag muted={record.isEffective === false} status={value} />
               ),
               title: "Durum",
+              width: 110,
             },
             {
               dataIndex: "sourceRole",
@@ -715,11 +753,13 @@ function MasterDetailPane({
                   sourceRole={value}
                 />,
               title: "Rol",
+              width: 130,
             },
             {
               dataIndex: "sourceDeliveryNoteNos",
               key: "sourceDeliveryNoteNos",
               title: "Kaynak Irsaliyeler",
+              width: 180,
             },
           ]}
           dataSource={(report as WarehouseDocumentMovementReport).rows}
@@ -727,6 +767,7 @@ function MasterDetailPane({
           pagination={{ pageSize: 12 }}
           rowClassName={(record) => (record.isEffective === false ? "kagu-row-muted" : "")}
           rowKey="id"
+          scroll={{ x: 1774 }}
           size="small"
         />
       </Space>
@@ -742,22 +783,27 @@ function MasterDetailPane({
         <Typography.Title level={4} style={{ margin: 0 }}>
           {recordTitle(report.item)}
         </Typography.Title>
+        <Space wrap>
+          <Button onClick={onOpenStockStatementPrint} type="primary">
+            PDF / Yazdır
+          </Button>
+        </Space>
         <Table
           columns={[
             { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih" },
-            { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
+            { dataIndex: "docNo", key: "docNo", title: "Sistem Evrak No" },
             { dataIndex: "warehouseName", key: "warehouseName", title: "Depo" },
             {
               dataIndex: "qtyIn",
               key: "qtyIn",
               render: (value: unknown) => formatQuantity(value),
-              title: "Giris",
+              title: "Giriş",
             },
             {
               dataIndex: "qtyOut",
               key: "qtyOut",
               render: (value: unknown) => formatQuantity(value),
-              title: "Cikis",
+              title: "Çıkış",
             },
           ]}
           dataSource={report.rows}
@@ -923,8 +969,7 @@ function hasCodeField(config: MasterModuleConfig) {
 }
 
 function recordTitle(record: DataRecord) {
-  const code = typeof record.code === "string" ? record.code : "";
   const name = typeof record.name === "string" ? record.name : "";
 
-  return code ? `${code} - ${name}` : name || String(record.id ?? "");
+  return name || String(record.id ?? "");
 }

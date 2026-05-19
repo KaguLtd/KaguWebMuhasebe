@@ -134,7 +134,7 @@ export function SettingsPeriodLockPanel({
             Settings
           </Typography.Text>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            Donem Kilidi
+            Dönem Kilidi
           </Typography.Title>
         </Space>
       }
@@ -167,7 +167,7 @@ export function SettingsPeriodLockPanel({
                     return Promise.resolve();
                   }
 
-                  return Promise.reject(new Error("Kilit aktifse tarih secilmelidir"));
+                  return Promise.reject(new Error("Kilit aktifse tarih seçilmelidir"));
                 },
               }),
             ]}
@@ -180,7 +180,7 @@ export function SettingsPeriodLockPanel({
             Son degistiren: {config?.updatedByUserId ?? "-"}
           </Typography.Text>
           <Typography.Text>
-            Son guncelleme: {formatDateTime(config?.updatedAt)}
+            Son güncelleme: {formatDateTime(config?.updatedAt)}
           </Typography.Text>
         </Space>
       </Space>

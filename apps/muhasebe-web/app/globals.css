@@ -606,6 +606,12 @@ input {
   font-weight: 700;
 }
 
+.kagu-report-print-table .kagu-report-group-gap td {
+  height: 7px;
+  padding: 0;
+  border: 0;
+}
+
 .kagu-report-print-table .kagu-report-empty {
   text-align: center;
   white-space: normal;

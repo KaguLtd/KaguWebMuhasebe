@@ -30,7 +30,7 @@ export function LoginForm({ nextPath }: LoginFormProps) {
       router.refresh();
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Giris istegi tamamlanamadi.",
+        error instanceof Error ? error.message : "Giriş isteği tamamlanamadı.",
       );
     } finally {
       setSubmitting(false);
@@ -43,7 +43,7 @@ export function LoginForm({ nextPath }: LoginFormProps) {
         <Alert showIcon title={errorMessage} type="error" />
       ) : null}
       <label className="grid gap-2 text-sm">
-        <span className="font-medium">Kullanici Adi</span>
+        <span className="font-medium">Kullanıcı Adı</span>
         <input
           autoComplete="username"
           className="border border-[var(--line)] bg-[#f9fbfd] px-3 py-2 outline-none focus:border-[var(--accent)]"
@@ -70,7 +70,7 @@ export function LoginForm({ nextPath }: LoginFormProps) {
         disabled={submitting}
         type="submit"
       >
-        Giris Yap
+        Giriş Yap
       </button>
     </form>
   );

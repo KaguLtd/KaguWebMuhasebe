@@ -13,7 +13,7 @@ test("delivery direction is locked by account kind", () => {
   );
   assert.throws(
     () => assertDeliveryDirectionAllowedForAccount("CUSTOMER", { direction: "IN" }),
-    /Musteri carilerde yalnizca cikis irsaliyesi kesilebilir\./,
+    /Müşteri carilerde yalnızca çıkış irsaliyesi kesilebilir\./,
   );
 
   assert.doesNotThrow(() =>
@@ -21,7 +21,7 @@ test("delivery direction is locked by account kind", () => {
   );
   assert.throws(
     () => assertDeliveryDirectionAllowedForAccount("SUPPLIER", { direction: "OUT" }),
-    /Tedarikci carilerde yalnizca giris irsaliyesi kesilebilir\./,
+    /Tedarikçi carilerde yalnızca giriş irsaliyesi kesilebilir\./,
   );
 
   assert.doesNotThrow(() =>

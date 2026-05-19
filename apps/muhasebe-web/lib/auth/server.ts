@@ -39,14 +39,14 @@ export async function loginWithPassword(
 
   if (!user || !user.isActive) {
     await recordLoginFailure(normalizedUsername, metadata);
-    throw new HttpError(401, "Kullanici adi veya sifre hatali");
+    throw new HttpError(401, "Kullanıcı adı veya şifre hatalı");
   }
 
   const valid = await verifyPassword(password, user.passwordHash);
 
   if (!valid) {
     await recordLoginFailure(normalizedUsername, metadata);
-    throw new HttpError(401, "Kullanici adi veya sifre hatali");
+    throw new HttpError(401, "Kullanıcı adı veya şifre hatalı");
   }
 
   await clearLoginFailures(normalizedUsername, metadata);

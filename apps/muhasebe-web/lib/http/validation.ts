@@ -93,7 +93,7 @@ export async function parseLoginPayload(request: Request): Promise<LoginPayload>
 
   return {
     password: requiredString(payload.password, "Sifre zorunludur"),
-    username: requiredString(payload.username, "Kullanici adi zorunludur"),
+    username: requiredString(payload.username, "Kullanıcı adı zorunludur"),
   };
 }
 
@@ -106,7 +106,7 @@ export async function parseUserPayload(
   const result: Partial<UserPayload> & { username?: string; password?: string } = {};
 
   if ("username" in payload || !partial) {
-    result.username = requiredString(payload.username, "Kullanici adi zorunludur");
+    result.username = requiredString(payload.username, "Kullanıcı adı zorunludur");
   }
 
   if ("displayName" in payload || "fullName" in payload || !partial) {
@@ -159,7 +159,7 @@ export async function parseMasterPayload(
     case "projects":
       assertOnlyKeys(payload, ["id", "accountId", "code", "name", "isActive"]);
       return cleanObject({
-        accountId: requiredString(payload.accountId, "Cari secimi zorunludur"),
+        accountId: requiredString(payload.accountId, "Cari seçimi zorunludur"),
         code: optionalStringField(payload.code),
         id: optionalId(payload.id),
         isActive: optionalBooleanField(payload.isActive),
@@ -208,16 +208,16 @@ export async function parseMasterPayload(
         "isActive",
       ]);
       return cleanObject({
-        classId: requiredString(payload.classId, "Sinif secimi zorunludur"),
+        classId: requiredString(payload.classId, "Sınıf seçimi zorunludur"),
         code: optionalStringField(payload.code),
         defaultVatRateId: requiredString(
           payload.defaultVatRateId,
-          "Varsayilan KDV secimi zorunludur",
+          "Varsayılan KDV seçimi zorunludur",
         ),
         id: optionalId(payload.id),
         isActive: optionalBooleanField(payload.isActive),
         name: requiredString(payload.name, "Malzeme adi zorunludur"),
-        unitId: requiredString(payload.unitId, "Birim secimi zorunludur"),
+        unitId: requiredString(payload.unitId, "Birim seçimi zorunludur"),
       });
   }
 }
@@ -245,7 +245,7 @@ export async function parseDocumentPayload(
         "lines",
       ]);
       return cleanObject({
-        accountId: requiredString(payload.accountId, "Cari secimi zorunludur"),
+        accountId: requiredString(payload.accountId, "Cari seçimi zorunludur"),
         actualDocNo: optionalLooseString(payload.actualDocNo),
         description: optionalLooseString(payload.description),
         direction: optionalEnum(payload.direction, DIRECTIONS, "Gecersiz yon") ?? "OUT",
@@ -256,7 +256,7 @@ export async function parseDocumentPayload(
         lines: requireDocumentLines(payload.lines, entity),
         projectId: optionalLooseString(payload.projectId),
         supersedesId: optionalLooseString(payload.supersedesId),
-        warehouseId: requiredString(payload.warehouseId, "Depo secimi zorunludur"),
+        warehouseId: requiredString(payload.warehouseId, "Depo seçimi zorunludur"),
       });
     case "invoices":
       assertOnlyKeys(payload, [
@@ -276,7 +276,7 @@ export async function parseDocumentPayload(
         "lines",
       ]);
       return cleanObject({
-        accountId: requiredString(payload.accountId, "Cari secimi zorunludur"),
+        accountId: requiredString(payload.accountId, "Cari seçimi zorunludur"),
         actualDocNo: optionalLooseString(payload.actualDocNo),
         currency: optionalEnum(payload.currency, CURRENCIES, "Gecersiz doviz") ?? "TRY",
         description: optionalLooseString(payload.description),
@@ -312,7 +312,7 @@ export async function parseDocumentPayload(
         "supersedesId",
       ]);
       return cleanObject({
-        accountId: requiredString(payload.accountId, "Cari secimi zorunludur"),
+        accountId: requiredString(payload.accountId, "Cari seçimi zorunludur"),
         amountMinor:
           optionalNumber(payload.amountMinor, "Gecersiz tutar", {
             integer: true,
@@ -360,7 +360,7 @@ export async function parseDocumentPayload(
         editReason: optionalLooseString(payload.editReason),
         fromAccountId: requiredString(
           payload.fromAccountId,
-          "Cikis cari secimi zorunludur",
+          "Çıkış cari seçimi zorunludur",
         ),
         id: optionalId(payload.id),
         projectId: optionalLooseString(payload.projectId),
@@ -369,7 +369,7 @@ export async function parseDocumentPayload(
           integer: true,
           min: 0,
         }),
-        toAccountId: requiredString(payload.toAccountId, "Giris cari secimi zorunludur"),
+        toAccountId: requiredString(payload.toAccountId, "Giriş cari seçimi zorunludur"),
       });
   }
 }

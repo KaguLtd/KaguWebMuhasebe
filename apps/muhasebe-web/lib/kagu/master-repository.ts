@@ -105,7 +105,7 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
       currency: row.currency,
       id: row.id,
       isActive: row.isActive,
-      label: `${row.code} - ${row.name}`,
+      label: row.name,
     }));
   }
 
@@ -122,7 +122,7 @@ export async function getDbLookups(entity: LookupEntity): Promise<LookupItem[]> 
         code: row.code,
         id: row.id,
         isActive: row.isActive,
-        label: `${row.code} - ${row.name}`,
+        label: row.name,
       };
     });
   }
@@ -197,7 +197,7 @@ export async function listDbMasters(
     return {
       items: rows.map((row) => ({
         ...projectRecord(row),
-        account_label: `${row.account.code} - ${row.account.name}`,
+        account_label: row.account.name,
       })),
       page,
       pageSize,
@@ -667,10 +667,9 @@ async function enrichRecord(entity: MasterEntity, record: DataRecord): Promise<D
 
 async function findMasterLabel(entity: MasterEntity, id: string) {
   const record = await findMasterRecord(entity, id);
-  const code = text(record?.code);
   const name = text(record?.name);
 
-  return code ? `${code} - ${name}` : name || null;
+  return name || null;
 }
 
 async function assertCanSetActiveState(
@@ -793,7 +792,6 @@ async function listCodes(entity: MasterEntity, tx: Tx = prisma) {
 async function getAccountBalanceMinor(accountId: string, tx: Tx = prisma) {
   const where = {
     accountId,
-    docType: { in: INVOICE_LEDGER_DOC_TYPES },
     isEffective: true,
   };
   const [debit, credit] = await Promise.all([
@@ -833,13 +831,6 @@ async function getWarehouseStockQuantity(warehouseId: string, tx: Tx = prisma) {
 
   return number(qtyIn._sum.qtyIn) - number(qtyOut._sum.qtyOut);
 }
-
-const INVOICE_LEDGER_DOC_TYPES = [
-  "SALES_INVOICE_STANDARD",
-  "SALES_INVOICE_STAR",
-  "PURCHASE_INVOICE_STANDARD",
-  "PURCHASE_INVOICE_STAR",
-];
 
 function buildAccountWhere(query: ListQuery): Prisma.AccountWhereInput {
   const search = normalizedSearch(query.search);

@@ -52,7 +52,7 @@ export default async function ProjectEstimatedMarginPrintPage({ searchParams }: 
           <tr>
             <th style={{ width: "12%" }}>Tarih</th>
             <th style={{ width: "18%" }}>Fis No</th>
-            <th style={{ width: "17%" }}>Satis Net</th>
+            <th style={{ width: "17%" }}>Satış Net</th>
             <th style={{ width: "18%" }}>Tahmini Maliyet</th>
             <th style={{ width: "18%" }}>Tahmini Kar</th>
             <th style={{ width: "17%" }}>Marj %</th>
@@ -106,5 +106,5 @@ function formatPercent(value: number | null) {
 }
 
 function projectLabel(project: Record<string, unknown>) {
-  return `${String(project.code ?? "")} / ${String(project.name ?? "")}`;
+  return String(project.name ?? "");
 }

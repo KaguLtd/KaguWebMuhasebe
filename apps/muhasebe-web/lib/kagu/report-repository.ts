@@ -35,18 +35,19 @@ export async function getDbDashboardTotals(): Promise<AppSnapshot["dashboard"]> 
   const todayDate = new Date().toISOString().slice(0, 10);
   const weekStart = addDays(todayDate, -6);
   const monthStart = todayDate.slice(0, 8) + "01";
+  const yearStart = todayDate.slice(0, 5) + "01-01";
   const dailySalesByCurrency = emptyCurrencyTotals();
   const weeklySalesByCurrency = emptyCurrencyTotals();
   const monthlySalesByCurrency = emptyCurrencyTotals();
+  const invoiceTotalsByCurrency = emptyCurrencyInvoiceTotals();
   const inventoryTotalByCurrency = await getInventoryTotalsByCurrency();
   let todayDocumentCount = 0;
 
   const invoices = await prisma.invoice.findMany({
     include: { lines: true },
     where: {
-      docDate: { gte: dateFromString(monthStart) },
+      docDate: { gte: dateFromString(yearStart) },
       isEffective: true,
-      invoiceKind: "SALES",
       status: "APPROVED",
     },
   });
@@ -62,21 +63,30 @@ export async function getDbDashboardTotals(): Promise<AppSnapshot["dashboard"]> 
 
   for (const invoice of invoices) {
     const docDate = dateString(invoice.docDate);
-    const amount = invoice.lines.reduce(
-      (total, line) => total + Math.round(number(line.quantity) * line.unitPriceMinor),
-      0,
-    );
+    const amount = invoice.documentTotalMinor;
     const docCurrency = currency(invoice.currency);
 
-    if (docDate === todayDate) {
+    if (invoice.invoiceKind === "SALES" && docDate === todayDate) {
       dailySalesByCurrency[docCurrency] += amount;
     }
 
     if (docDate >= weekStart && docDate <= todayDate) {
-      weeklySalesByCurrency[docCurrency] += amount;
+      invoiceTotalsByCurrency[docCurrency].weeklyMinor += amount;
     }
 
     if (docDate >= monthStart && docDate <= todayDate) {
+      invoiceTotalsByCurrency[docCurrency].monthlyMinor += amount;
+    }
+
+    if (docDate >= yearStart && docDate <= todayDate) {
+      invoiceTotalsByCurrency[docCurrency].yearlyMinor += amount;
+    }
+
+    if (invoice.invoiceKind === "SALES" && docDate >= weekStart && docDate <= todayDate) {
+      weeklySalesByCurrency[docCurrency] += amount;
+    }
+
+    if (invoice.invoiceKind === "SALES" && docDate >= monthStart && docDate <= todayDate) {
       monthlySalesByCurrency[docCurrency] += amount;
     }
   }
@@ -86,6 +96,7 @@ export async function getDbDashboardTotals(): Promise<AppSnapshot["dashboard"]> 
     dailySalesTotalMinor: sumCurrencyTotals(dailySalesByCurrency),
     inventoryTotalByCurrency,
     inventoryTotalMinor: sumCurrencyTotals(inventoryTotalByCurrency),
+    invoiceTotalsByCurrency,
     monthlySalesByCurrency,
     monthlySalesTotalMinor: sumCurrencyTotals(monthlySalesByCurrency),
     todayDocumentCount,
@@ -173,7 +184,10 @@ export async function getDbAccountStatementReport(
           ? "Virman"
           : voucherTypeLabel(entry.docType);
     const sourceDescription =
-      invoice?.description ?? receipt?.description ?? transfer?.description ?? entry.description;
+      invoice?.description ??
+      receipt?.description ??
+      transfer?.description ??
+      (transfer ? "Virman" : entry.description);
 
     debitTotalMinor += entry.debitMinor;
     creditTotalMinor += entry.creditMinor;
@@ -313,9 +327,9 @@ export async function getDbWarehouseDocumentMovementReport(
 
     return {
       accountLabel: delivery
-        ? `${delivery.account.code} - ${delivery.account.name}`
+        ? delivery.account.name
         : invoice
-          ? `${invoice.account.code} - ${invoice.account.name}`
+          ? invoice.account.name
           : null,
       cancelledAt: movement.cancelledAt?.toISOString() ?? null,
       createdAt: movement.createdAt.toISOString(),
@@ -329,7 +343,7 @@ export async function getDbWarehouseDocumentMovementReport(
       itemId: movement.itemId,
       itemName: movement.item.name,
       projectId: movement.projectId,
-      projectLabel: movement.project ? `${movement.project.code} - ${movement.project.name}` : null,
+      projectLabel: movement.project ? movement.project.name : null,
       qtyIn: number(movement.qtyIn),
       qtyOut: number(movement.qtyOut),
       replacedByDocId: movement.replacedByDocId ?? null,
@@ -344,8 +358,8 @@ export async function getDbWarehouseDocumentMovementReport(
               : "Normal"
         : invoice
           ? invoice.invoiceKind === "SALES"
-            ? "Satis Faturasi"
-            : "Alis Faturasi"
+            ? "Satış Faturası"
+            : "Alış Faturası"
           : movement.docType,
       status: delivery?.status ?? invoice?.status ?? null,
       warehouseId: movement.warehouseId,
@@ -467,14 +481,8 @@ export async function getDbStockStatementReport(
       continue;
     }
 
-    const running =
-      (runningByItem.get(movement.itemId) ?? 0) +
-      number(movement.qtyIn) -
-      number(movement.qtyOut);
-
-    runningByItem.set(movement.itemId, running);
     rows.push({
-      accountLabel: sourceAccount ? `${sourceAccount.code} - ${sourceAccount.name}` : null,
+      accountLabel: sourceAccount ? sourceAccount.name : null,
       cancelledAt: movement.cancelledAt?.toISOString() ?? null,
       createdAt: movement.createdAt.toISOString(),
       description: delivery?.description ?? invoice?.description ?? null,
@@ -493,13 +501,11 @@ export async function getDbStockStatementReport(
       itemId: movement.itemId,
       itemName: movement.item.name,
       projectId: movement.projectId,
-      projectLabel: movement.project
-        ? `${movement.project.code} - ${movement.project.name}`
-        : null,
+      projectLabel: movement.project ? movement.project.name : null,
       qtyIn: number(movement.qtyIn),
       qtyOut: number(movement.qtyOut),
       replacedByDocId: movement.replacedByDocId ?? null,
-      runningBalance: running,
+      runningBalance: 0,
       unitLabel: movement.item.unit?.name ?? null,
       voucherTypeLabel: delivery
         ? deliveryNoteLabel(delivery)
@@ -509,6 +515,24 @@ export async function getDbStockStatementReport(
       warehouseId: movement.warehouseId,
       warehouseLabel: `${movement.warehouse.code} - ${movement.warehouse.name}`,
     });
+  }
+
+  rows.sort((left, right) => {
+    const byItem = left.itemName.localeCompare(right.itemName, "tr-TR");
+
+    return (
+      byItem ||
+      left.docDate.localeCompare(right.docDate) ||
+      left.createdAt.localeCompare(right.createdAt)
+    );
+  });
+  runningByItem.clear();
+
+  for (const row of rows) {
+    const running = (runningByItem.get(row.itemId) ?? 0) + row.qtyIn - row.qtyOut;
+
+    runningByItem.set(row.itemId, running);
+    row.runningBalance = running;
   }
 
   return {
@@ -603,6 +627,14 @@ export async function getDbProjectStockMovementReport(
       warehouseId: movement.warehouseId,
       warehouseName: text(movement.warehouse.name),
     };
+  }).toSorted((left, right) => {
+    const byItem = left.itemName.localeCompare(right.itemName, "tr-TR");
+
+    return (
+      byItem ||
+      left.docDate.localeCompare(right.docDate) ||
+      left.createdAt.localeCompare(right.createdAt)
+    );
   });
 
   return {
@@ -645,7 +677,7 @@ export async function getDbProjectInvoiceListReport(
     })
   ).map((invoice) => ({
     accountId: invoice.accountId,
-    accountLabel: `${invoice.account.code} - ${invoice.account.name}`,
+    accountLabel: invoice.account.name,
     currency: currency(invoice.currency),
     displayDocNo: preferredDocNo(invoice.actualDocNo, invoice.docNo),
     docDate: dateString(invoice.docDate),
@@ -932,6 +964,15 @@ function emptyCurrencyTotals(): Record<Currency, number> {
   return { EUR: 0, GBP: 0, TRY: 0, USD: 0 };
 }
 
+function emptyCurrencyInvoiceTotals(): AppSnapshot["dashboard"]["invoiceTotalsByCurrency"] {
+  return {
+    EUR: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+    GBP: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+    TRY: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+    USD: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+  };
+}
+
 function sumCurrencyTotals(totals: Record<Currency, number>) {
   return Object.values(totals).reduce((total, value) => total + value, 0);
 }
@@ -1001,7 +1042,7 @@ function projectReportRecord(project: {
 }) {
   return {
     account_id: project.accountId,
-    account_label: `${project.account.code} - ${project.account.name}`,
+    account_label: project.account.name,
     code: project.code,
     id: project.id,
     is_active: project.isActive,

@@ -150,7 +150,7 @@ export function ProjectReportsWorkspace({ lookups }: { lookups: LookupMap }) {
   return (
     <Card
       className="kagu-card"
-      title="Proje Raporlari"
+      title="Proje Raporları"
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Space size={8} wrap>
@@ -158,7 +158,7 @@ export function ProjectReportsWorkspace({ lookups }: { lookups: LookupMap }) {
             allowClear
             onChange={handleProjectChange}
             options={projectOptions}
-            placeholder="Proje sec"
+            placeholder="Proje seç"
             showSearch
             style={{ minWidth: 260 }}
             value={projectId}
@@ -177,10 +177,10 @@ export function ProjectReportsWorkspace({ lookups }: { lookups: LookupMap }) {
             disabled={activeTab !== "invoices"}
             onChange={(value) => setInvoiceKind(value)}
             options={[
-              { label: "Satis", value: "SALES" },
-              { label: "Alis", value: "PURCHASE" },
+              { label: "Satış", value: "SALES" },
+              { label: "Alış", value: "PURCHASE" },
             ]}
-            placeholder="Fatura turu"
+            placeholder="Fatura türü"
             style={{ width: 150 }}
             value={invoiceKind}
           />
@@ -211,20 +211,20 @@ export function ProjectReportsWorkspace({ lookups }: { lookups: LookupMap }) {
             Temizle
           </Button>
           <Button disabled={!projectId} onClick={openProjectPrint} type="primary">
-            PDF / Yazdir
+            PDF / Yazdır
           </Button>
         </Space>
         <Tabs
           activeKey={activeTab}
           items={[
-            { key: "stock", label: "Proje stok etkili evraklari" },
-            { key: "invoices", label: "Proje bazli fatura listesi" },
-            { key: "usage", label: "Proje bazli malzeme kullanimi" },
-            { key: "margin", label: "Tahmini Proje Brut Marji" },
+            { key: "stock", label: "Proje stok etkili evrakları" },
+            { key: "invoices", label: "Proje bazlı fatura listesi" },
+            { key: "usage", label: "Proje bazlı malzeme kullanımı" },
+            { key: "margin", label: "Tahmini Proje Brüt Marjı" },
           ]}
           onChange={(value) => setActiveTab(value as ReportTab)}
         />
-        {!projectId ? <Empty description="Rapor gormek icin bir proje secin" /> : null}
+        {!projectId ? <Empty description="Rapor görmek için bir proje seçin" /> : null}
         {projectId && activeTab === "stock" ? (
           <StockReportPane loading={loading} report={stockReport} />
         ) : null}
@@ -262,7 +262,7 @@ function StockReportPane({
         columns={[
           { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih" },
           { dataIndex: "docType", key: "docType", title: "Evrak Tipi" },
-          { dataIndex: "docNo", key: "docNo", title: "Belge No" },
+          { dataIndex: "docNo", key: "docNo", title: "Sistem Evrak No" },
           { dataIndex: "warehouseName", key: "warehouseName", title: "Depo" },
           { dataIndex: "itemCode", key: "itemCode", title: "Malzeme Kodu" },
           { dataIndex: "itemName", key: "itemName", title: "Malzeme" },
@@ -270,13 +270,13 @@ function StockReportPane({
             dataIndex: "qtyIn",
             key: "qtyIn",
             render: (value: unknown) => formatQuantity(value),
-            title: "Giris",
+            title: "Giriş",
           },
           {
             dataIndex: "qtyOut",
             key: "qtyOut",
             render: (value: unknown) => formatQuantity(value),
-            title: "Cikis",
+            title: "Çıkış",
           },
         ]}
         dataSource={report?.rows ?? []}
@@ -302,8 +302,8 @@ function InvoiceReportPane({
       <SummaryRow
         items={[
           { label: "Fatura", value: report?.summary.invoiceCount ?? 0 },
-          { label: "Satis", value: report?.summary.salesCount ?? 0 },
-          { label: "Alis", value: report?.summary.purchaseCount ?? 0 },
+          { label: "Satış", value: report?.summary.salesCount ?? 0 },
+          { label: "Alış", value: report?.summary.purchaseCount ?? 0 },
         ]}
       />
       <CurrencySummaryCard
@@ -313,8 +313,8 @@ function InvoiceReportPane({
       <Table
         columns={[
           { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih" },
-          { dataIndex: "docNo", key: "docNo", title: "Fatura No" },
-          { dataIndex: "invoiceKind", key: "invoiceKind", title: "Fatura Turu" },
+          { dataIndex: "docNo", key: "docNo", title: "Sistem Evrak No" },
+          { dataIndex: "invoiceKind", key: "invoiceKind", title: "Fatura Türü" },
           { dataIndex: "accountLabel", key: "accountLabel", title: "Cari" },
           { dataIndex: "warehouseLabel", key: "warehouseLabel", title: "Depo" },
           { dataIndex: "currency", key: "currency", title: "Para Birimi" },
@@ -334,7 +334,7 @@ function InvoiceReportPane({
             dataIndex: "grossTotalMinor",
             key: "grossTotalMinor",
             render: (value: unknown, row: { currency: string }) => formatMinor(value, row.currency),
-            title: "Brut",
+            title: "Brüt",
           },
           { dataIndex: "status", key: "status", title: "Durum" },
         ]}
@@ -361,7 +361,7 @@ function UsageReportPane({
       <SummaryRow
         items={[
           { label: "Malzeme", value: report?.summary.distinctItemCount ?? 0 },
-          { label: "Evrak Satiri", value: report?.summary.totalMovementCount ?? 0 },
+          { label: "Evrak Satırı", value: report?.summary.totalMovementCount ?? 0 },
         ]}
       />
       <Table
@@ -373,24 +373,24 @@ function UsageReportPane({
             dataIndex: "qtyOut",
             key: "qtyOut",
             render: (value: unknown) => formatQuantity(value),
-            title: "Toplam Cikis",
+            title: "Toplam Çıkış",
           },
           {
             dataIndex: "qtyIn",
             key: "qtyIn",
             render: (value: unknown) => formatQuantity(value),
-            title: "Toplam Iade/Giris",
+            title: "Toplam İade/Giriş",
           },
           {
             dataIndex: "netUsage",
             key: "netUsage",
             render: (value: unknown) => formatQuantity(value),
-            title: "Net Kullanim",
+            title: "Net Kullanım",
           },
         ]}
         dataSource={report?.rows ?? []}
         loading={loading}
-        locale={{ emptyText: <Empty description="Malzeme kullanimi yok" /> }}
+        locale={{ emptyText: <Empty description="Malzeme kullanımı yok" /> }}
         pagination={false}
         rowKey="itemId"
         size="small"
@@ -412,13 +412,13 @@ function MarginReportPane({
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert
         showIcon
-        title="Tahmini brut marjdir; tam P&L degildir."
+        title="Tahmini brüt marjdır; tam P&L değildir."
         type="warning"
       />
       <SummaryRow
         items={[
           {
-            label: "Satis Net",
+            label: "Satış Net",
             value: formatMinor(report?.summary.salesNetTotalMinor ?? 0, currency),
           },
           {
@@ -426,7 +426,7 @@ function MarginReportPane({
             value: formatMinor(report?.summary.estimatedCostTotalMinor ?? 0, currency),
           },
           {
-            label: "Tahmini Brut Kar",
+            label: "Tahmini Brüt Kâr",
             value: formatMinor(report?.summary.estimatedGrossProfitMinor ?? 0, currency),
           },
           {
@@ -441,7 +441,7 @@ function MarginReportPane({
       <Table
         columns={[
           { dataIndex: "docDate", key: "docDate", render: formatDate, title: "Tarih" },
-          { dataIndex: "docNo", key: "docNo", title: "Fatura No" },
+          { dataIndex: "docNo", key: "docNo", title: "Sistem Evrak No" },
           {
             dataIndex: "invoiceNetTotalMinor",
             key: "invoiceNetTotalMinor",
@@ -458,7 +458,7 @@ function MarginReportPane({
             dataIndex: "profitMinor",
             key: "profitMinor",
             render: (value: unknown, row: { currency: string }) => formatMinor(value, row.currency),
-            title: "Tahmini Brut Kar",
+            title: "Tahmini Brüt Kâr",
           },
           {
             dataIndex: "marginPercent",
@@ -511,11 +511,11 @@ function CurrencySummaryCard({
   }
 
   return (
-    <Card className="kagu-card" size="small" title="Para Birimi Bazli Ozet">
+    <Card className="kagu-card" size="small" title="Para Birimi Bazlı Özet">
       <Space orientation="vertical" size={8} style={{ width: "100%" }}>
         {currencies.map((currency) => (
           <Typography.Text key={currency}>
-            {currency} net: {formatMinor(netTotals?.[currency] ?? 0, currency)} | {currency} brut:{" "}
+            {currency} net: {formatMinor(netTotals?.[currency] ?? 0, currency)} | {currency} brüt:{" "}
             {formatMinor(grossTotals?.[currency] ?? 0, currency)}
           </Typography.Text>
         ))}

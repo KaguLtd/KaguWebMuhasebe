@@ -42,7 +42,7 @@ export function ReportPrintHeader({
       <div className="kagu-report-print-topline">
         <span>Rapor Tarihi: {formatReportDate(reportDate ?? new Date())}</span>
         <strong>{title}</strong>
-        <span>Sayfa: <span className="kagu-report-page-number" /></span>
+        <span>Sayfa: 1</span>
       </div>
       <div className="kagu-report-print-company">Kagu Design Ltd.</div>
       {subject ? <div className="kagu-report-print-subject">{subject}</div> : null}

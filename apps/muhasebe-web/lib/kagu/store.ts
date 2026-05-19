@@ -194,7 +194,7 @@ export function getLookups(entity: LookupEntity): LookupItem[] {
       return {
         id: text(enriched.id),
         code,
-        label: code ? `${code} - ${name}` : name,
+        label: name,
         currency: text(enriched.currency) as Currency,
         accountKind: text(enriched.account_kind) as LookupItem["accountKind"],
         isActive: enriched.is_active !== false,
@@ -207,7 +207,7 @@ export function getLookups(entity: LookupEntity): LookupItem[] {
       return {
         id: text(enriched.id),
         code,
-        label: code ? `${code} - ${name}` : name,
+        label: name,
         accountId: text(enriched.account_id),
         accountCode: text(account?.code),
         isActive: enriched.is_active !== false,
@@ -472,10 +472,9 @@ function enrichRecord(entity: MasterEntity, record: MasterRecord): MasterRecord 
 
 function findLabel(records: MasterRecord[], id: unknown) {
   const record = records.find((item) => item.id === id);
-  const code = text(record?.code);
   const name = text(record?.name);
 
-  return code ? `${code} - ${name}` : name || null;
+  return name || null;
 }
 
 function normalize(value: unknown) {

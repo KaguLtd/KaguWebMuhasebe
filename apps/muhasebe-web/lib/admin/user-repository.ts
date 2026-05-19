@@ -104,7 +104,7 @@ export async function updateUser(
   });
 
   if (!current) {
-    throw new HttpError(404, "Kullanici bulunamadi");
+    throw new HttpError(404, "Kullanıcı bulunamadı");
   }
 
   if (input.username && input.username !== current.username) {

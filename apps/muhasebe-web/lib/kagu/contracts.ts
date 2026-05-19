@@ -82,6 +82,14 @@ export interface AppSnapshot {
     weeklySalesByCurrency: Record<Currency, number>;
     monthlySalesByCurrency: Record<Currency, number>;
     inventoryTotalByCurrency: Record<Currency, number>;
+    invoiceTotalsByCurrency: Record<
+      Currency,
+      {
+        monthlyMinor: number;
+        weeklyMinor: number;
+        yearlyMinor: number;
+      }
+    >;
   };
 }
 

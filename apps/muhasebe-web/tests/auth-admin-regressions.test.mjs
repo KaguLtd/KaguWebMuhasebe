@@ -99,6 +99,142 @@ test("document repository keeps history through supersede flow and period lock c
   assert.match(source, /CREATE_REVISION_DRAFT|SUPERSEDE/);
 });
 
+test("user-facing config labels and document list column order stay Turkish", async () => {
+  const { documentModules, accountKindOptions, workspaceMenu } = await importAppModule("lib/kagu/config.ts");
+  const delivery = documentModules.find((module) => module.entity === "deliveryNotes");
+  const invoices = documentModules.find((module) => module.entity === "invoices");
+
+  assert.deepEqual(
+    delivery.columns.map((column) => column.title),
+    [
+      "Tarih",
+      "Cari",
+      "Proje",
+      "Sistem Evrak No",
+      "Harici Evrak No",
+      "İrsaliye Tipi",
+      "Hareket Yönü",
+      "İade",
+      "Durum",
+    ],
+  );
+  assert.deepEqual(
+    invoices.columns.map((column) => column.title),
+    [
+      "Tarih",
+      "Cari",
+      "Proje",
+      "Sistem Evrak No",
+      "Harici Evrak No",
+      "Fatura Türü",
+      "Durum",
+      "Yıldız",
+      "Toplam",
+    ],
+  );
+  assert(accountKindOptions.some((option) => option.label === "Müşteri"));
+  assert(workspaceMenu.some((item) => item.title === "Panel"));
+
+  const configSource = await readFile(new URL("../lib/kagu/config.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(configSource, /Doviz Kuru/);
+});
+
+test("dashboard invoice totals include only approved effective invoices by currency", async () => {
+  const { getDbDashboardTotals } = await importAppModule("lib/kagu/report-repository.ts");
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+
+  setPrismaMock({
+    deliveryNote: { count: async () => 0 },
+    invoice: {
+      count: async () => 0,
+      findMany: async ({ where }) => {
+        assert.equal(where.status, "APPROVED");
+        assert.equal(where.isEffective, true);
+        assert(where.docDate.gte instanceof Date);
+
+        return [
+          {
+            currency: "TRY",
+            docDate: new Date(`${year}-${month}-02T00:00:00.000Z`),
+            documentTotalMinor: 1000,
+            invoiceKind: "SALES",
+          },
+          {
+            currency: "USD",
+            docDate: new Date(`${year}-01-02T00:00:00.000Z`),
+            documentTotalMinor: 2500,
+            invoiceKind: "PURCHASE",
+          },
+        ];
+      },
+    },
+    item: { findMany: async () => [] },
+    receipt: { count: async () => 0 },
+    stockMovement: { groupBy: async () => [] },
+    transfer: { count: async () => 0 },
+  });
+
+  const totals = await getDbDashboardTotals();
+
+  assert.equal(totals.invoiceTotalsByCurrency.TRY.monthlyMinor, 1000);
+  assert.equal(totals.invoiceTotalsByCurrency.TRY.yearlyMinor, 1000);
+  assert.equal(totals.invoiceTotalsByCurrency.USD.yearlyMinor, 2500);
+  assert.equal(totals.invoiceTotalsByCurrency.EUR.yearlyMinor, 0);
+});
+
+test("admin bootstrap default user uses scrypt hash and keeps existing password", async () => {
+  const {
+    DEFAULT_ADMIN_PASSWORD_HASH,
+    DEFAULT_ADMIN_USERNAME,
+    ensureDefaultAdminUser,
+  } = await import(new URL("../scripts/admin-bootstrap-shared.mjs", import.meta.url));
+  const calls = [];
+  const existingPasswordHash = "scrypt$existing$hash";
+  const prisma = {
+    user: {
+      create: async ({ data }) => {
+        calls.push(["create", data]);
+        return { id: "user-default", ...data };
+      },
+      findUnique: async () => null,
+      update: async ({ data }) => {
+        calls.push(["update", data]);
+        return { id: "user-default", username: DEFAULT_ADMIN_USERNAME, ...data };
+      },
+    },
+    userRole: {
+      createMany: async ({ data, skipDuplicates }) => {
+        calls.push(["role", { data, skipDuplicates }]);
+      },
+    },
+  };
+
+  await ensureDefaultAdminUser(prisma, { adminRoleId: "role-admin" });
+  assert.match(DEFAULT_ADMIN_PASSWORD_HASH, /^scrypt\$[a-f0-9]+\$[a-f0-9]+$/);
+  assert.equal(calls[0][1].username, DEFAULT_ADMIN_USERNAME);
+  assert.equal(calls[0][1].passwordHash, DEFAULT_ADMIN_PASSWORD_HASH);
+
+  prisma.user.findUnique = async () => ({
+    displayName: "Ahmet Can",
+    id: "user-default",
+    isActive: false,
+    passwordHash: existingPasswordHash,
+    username: DEFAULT_ADMIN_USERNAME,
+  });
+  calls.length = 0;
+  await ensureDefaultAdminUser(prisma, { adminRoleId: "role-admin" });
+  assert.equal(calls[0][0], "update");
+  assert.equal(Object.hasOwn(calls[0][1], "passwordHash"), false);
+
+  const sharedSource = await readFile(
+    new URL("../scripts/admin-bootstrap-shared.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.equal(sharedSource.includes(["616", "800", "asd"].join("")), false);
+});
+
 test("delivery merge and invoicing workflows keep separate semantic fields", async () => {
   const [schemaSource, repositorySource] = await Promise.all([
     readFile(new URL("../prisma/schema.prisma", import.meta.url), "utf8"),
@@ -149,13 +285,13 @@ test("warehouse document movements and invoice candidates use go-live filters", 
   assert.match(workspaceSource, /next\.sourceDeliveryLineIds = deliveryNoteLineId/);
 });
 
-test("master aggregates use only effective invoice ledger and stock movements", async () => {
+test("master aggregates use effective account ledger and stock movements", async () => {
   const source = await readFile(
     new URL("../lib/kagu/master-repository.ts", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /docType: \{ in: INVOICE_LEDGER_DOC_TYPES \}/);
+  assert.doesNotMatch(source, /docType: \{ in: INVOICE_LEDGER_DOC_TYPES \}/);
   assert.match(source, /isEffective: true/);
   assert.match(source, /where: \{ itemId, isEffective: true \}/);
   assert.match(source, /where: \{ warehouseId, isEffective: true \}/);

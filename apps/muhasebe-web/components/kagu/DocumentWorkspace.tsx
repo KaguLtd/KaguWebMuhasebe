@@ -21,10 +21,15 @@ import {
   Typography,
 } from "antd";
 import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
   CopyOutlined,
   DeleteOutlined,
+  EyeOutlined,
   LockOutlined,
   PlusOutlined,
+  RollbackOutlined,
+  StarFilled,
 } from "@ant-design/icons";
 import type { TablePaginationConfig } from "antd";
 import dayjs from "dayjs";
@@ -400,7 +405,7 @@ export function DocumentWorkspace({
       setReloadKey((value) => value + 1);
       void onDataChanged?.();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "Iptal basarisiz");
+      message.error(error instanceof Error ? error.message : "İptal başarısız");
       setLoading(false);
     } finally {
       voidInFlightRef.current = false;
@@ -457,7 +462,7 @@ export function DocumentWorkspace({
       extra={
         <Space>
           {module.entity === "deliveryNotes" ? (
-            <Button onClick={() => setMergeDrawerOpen(true)}>Irsaliye Birlestir</Button>
+            <Button onClick={() => setMergeDrawerOpen(true)}>İrsaliye Birleştir</Button>
           ) : null}
           <Button onClick={openNewDraft} type="primary">
             Yeni Taslak
@@ -491,55 +496,25 @@ export function DocumentWorkspace({
               fixed: "right",
               key: "actions",
               render: (_value: unknown, record: DataRecord) => (
-                <Space>
-                  <Button
-                    disabled={record.status === "VOID"}
-                    onClick={() => openExistingDraft(record)}
-                    size="small"
-                    type="link"
-                  >
-                    Ac
-                  </Button>
-                  <Button
-                    disabled={record.status !== "DRAFT"}
-                    onClick={() => approveRow(String(record.id))}
-                    size="small"
-                    type="link"
-                  >
-                    Onayla
-                  </Button>
-                  {canShowVoidAction(module.entity, record) ? (
-                    <Button
-                      danger
-                      disabled={record.status === "VOID"}
-                      onClick={() => {
-                        setVoidTarget(record);
-                        setVoidReason("");
-                      }}
-                      size="small"
-                      type="link"
-                    >
-                      Iptal
-                    </Button>
-                  ) : null}
-                  {module.entity === "deliveryNotes" &&
-                  record.merge_role === "MERGED_RESULT" &&
-                  record.status === "APPROVED" &&
-                  record.is_effective !== false &&
-                  !record.invoiced_by_invoice_id ? (
-                    <Button onClick={() => unmergeRow(String(record.id))} size="small" type="link">
-                      Coz
-                    </Button>
-                  ) : null}
-                </Space>
+                <DocumentRowActions
+                  entity={module.entity}
+                  onApprove={() => approveRow(String(record.id))}
+                  onOpen={() => openExistingDraft(record)}
+                  onUnmerge={() => unmergeRow(String(record.id))}
+                  onVoid={() => {
+                    setVoidTarget(record);
+                    setVoidReason("");
+                  }}
+                  record={record}
+                />
               ),
-              title: "",
-              width: 190,
+              title: "Aksiyonlar",
+              width: 126,
             },
           ]}
           dataSource={rows}
           loading={loading || saving}
-          locale={{ emptyText: <Empty description="Henuz belge kaydi yok" /> }}
+          locale={{ emptyText: <Empty description="Henüz belge kaydı yok" /> }}
           onChange={handleTableChange}
           pagination={{
             current: pagination.page,
@@ -567,7 +542,7 @@ export function DocumentWorkspace({
             <Alert
               showIcon
               style={{ marginBottom: 16 }}
-              title="Onayli belge icin revizyon taslagi acilir."
+        title="Onaylı belge için revizyon taslağı açılır."
               type="warning"
             />
           ) : null}
@@ -607,7 +582,7 @@ export function DocumentWorkspace({
             </DocumentFormSection>
           ) : null}
           {module.lineFields?.length ? (
-            <DocumentFormSection title={module.entity === "deliveryNotes" ? "Malzeme Satirlari" : "Satirlar"}>
+            <DocumentFormSection title={module.entity === "deliveryNotes" ? "Malzeme Satırları" : "Satırlar"}>
               <Form.List name="lines">
                 {(fields, { add, remove }) => (
                   <EditableLineTable
@@ -672,7 +647,7 @@ export function DocumentWorkspace({
       <Modal
         confirmLoading={loading}
         okButtonProps={{ danger: true, disabled: loading || !voidReason.trim() }}
-        okText="Iptal Et"
+        okText="İptal Et"
         onCancel={() => setVoidTarget(null)}
         onOk={() => {
           if (voidTarget) {
@@ -680,16 +655,16 @@ export function DocumentWorkspace({
           }
         }}
         open={Boolean(voidTarget)}
-        title="Belge Iptal Nedeni"
+        title="Belge İptal Nedeni"
       >
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           <Typography.Text>
-            Iptal ve onayli belge degisikligi gerekce ile izlenir.
+            İptal ve onaylı belge değişikliği gerekçe ile izlenir.
           </Typography.Text>
           <Input.TextArea
             autoSize={{ minRows: 3 }}
             onChange={(event) => setVoidReason(event.target.value)}
-            placeholder="Iptal nedeni"
+            placeholder="İptal nedeni"
             value={voidReason}
           />
         </Space>
@@ -761,7 +736,7 @@ function DeliveryMergeDrawer({
     })
       .then(setCandidates)
       .catch((error: unknown) =>
-        message.error(error instanceof Error ? error.message : "Adaylar alinamadi"),
+        message.error(error instanceof Error ? error.message : "Adaylar alınamadı"),
       )
       .finally(() => setLoading(false));
   }, [filters, flow, message, open]);
@@ -782,11 +757,11 @@ function DeliveryMergeDrawer({
     setLoading(true);
     try {
       await createMergedDeliveryNoteDraft(selectedRows.map((row) => String(row.id)), flow);
-      message.success("B-Irsaliye taslagi olusturuldu");
+      message.success("B-İrsaliye taslağı oluşturuldu");
       setSelectedIds([]);
       onMerged();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "Birlesim basarisiz");
+      message.error(error instanceof Error ? error.message : "Birleşim başarısız");
     } finally {
       submitInFlightRef.current = false;
       setLoading(false);
@@ -799,7 +774,7 @@ function DeliveryMergeDrawer({
       onClose={onClose}
       open={open}
       size="min(1520px, 95vw)"
-      title="Irsaliye Birlestir"
+      title="İrsaliye Birleştir"
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Space wrap>
@@ -833,8 +808,8 @@ function DeliveryMergeDrawer({
           <Select
             onChange={(value) => setFlow(value)}
             options={[
-              { label: "Satis / proje cikisi netlestirme", value: "SALES_OUT" },
-              { label: "Alim / tedarikci girisi netlestirme", value: "PURCHASE_IN" },
+              { label: "Satış / proje çıkışı netleştirme", value: "SALES_OUT" },
+              { label: "Alım / tedarikçi girişi netleştirme", value: "PURCHASE_IN" },
             ]}
             style={{ minWidth: 260 }}
             value={flow}
@@ -842,14 +817,14 @@ function DeliveryMergeDrawer({
         </Space>
         <Table<DeliveryNoteCandidate>
           columns={[
-            { dataIndex: "doc_no", key: "doc_no", title: "Evrak No" },
+            { dataIndex: "doc_no", key: "doc_no", title: "Sistem Evrak No" },
             {
               dataIndex: "account_id",
               key: "account_id",
               render: (value) => findLookup(lookups.accounts, value)?.label ?? String(value),
               title: "Cari",
             },
-            { dataIndex: "direction", key: "direction", title: "Hareket Yonu" },
+            { dataIndex: "direction", key: "direction", title: "Hareket Yönü" },
             {
               dataIndex: "is_return",
               key: "is_return",
@@ -860,10 +835,10 @@ function DeliveryMergeDrawer({
                   muted={isMutedDocumentRecord(record)}
                 />
               ),
-              title: "Iade",
+              title: "İade",
             },
             { dataIndex: "doc_date", key: "doc_date", render: formatDate, title: "Tarih" },
-            { dataIndex: "line_count", key: "line_count", title: "Satir" },
+            { dataIndex: "line_count", key: "line_count", title: "Satır" },
           ]}
           dataSource={visibleCandidates}
           loading={loading}
@@ -875,22 +850,22 @@ function DeliveryMergeDrawer({
           }}
           size="small"
         />
-        <Typography.Text className="kagu-section-kicker">Birlesim Onizleme</Typography.Text>
+        <Typography.Text className="kagu-section-kicker">Birleşim Önizleme</Typography.Text>
         <Table
           columns={[
             { dataIndex: "itemLabel", key: "itemLabel", title: "Malzeme" },
             { dataIndex: "quantity", key: "quantity", title: "Net Miktar" },
           ]}
           dataSource={preview}
-          locale={{ emptyText: <Empty description="Secim yok" /> }}
+          locale={{ emptyText: <Empty description="Seçim yok" /> }}
           pagination={false}
           rowKey="itemId"
           size="small"
         />
         <Space className="kagu-drawer-actions">
-          <Button onClick={onClose}>Vazgec</Button>
+          <Button onClick={onClose}>Vazgeç</Button>
           <Button disabled={loading || selectedRows.length < 2} loading={loading} onClick={submit} type="primary">
-            B-Irsaliye Taslagi Olustur
+            B-İrsaliye Taslağı Oluştur
           </Button>
         </Space>
       </Space>
@@ -941,7 +916,7 @@ function InvoiceDeliveryImportDrawer({
       })
       .then(setCandidates)
       .catch((error: unknown) =>
-        message.error(error instanceof Error ? error.message : "Irsaliyeler alinamadi"),
+        message.error(error instanceof Error ? error.message : "İrsaliyeler alınamadı"),
       )
       .finally(() => setLoading(false));
   }, [accountId, invoiceKind, lockedInvoiceKind, message, open, projectId]);
@@ -965,7 +940,7 @@ function InvoiceDeliveryImportDrawer({
       });
       onImported(detail);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "Irsaliye aktarilamadi");
+      message.error(error instanceof Error ? error.message : "İrsaliye aktarılamadı");
     } finally {
       submitInFlightRef.current = false;
       setLoading(false);
@@ -978,20 +953,20 @@ function InvoiceDeliveryImportDrawer({
       onClose={onClose}
       open={open}
       size="min(1520px, 95vw)"
-      title="Faturaya Irsaliye Aktar"
+      title="Faturaya İrsaliye Aktar"
     >
       <Table<DeliveryNoteCandidate>
         columns={[
-          { dataIndex: "doc_no", key: "doc_no", title: "Evrak No" },
-          { dataIndex: "direction", key: "direction", title: "Hareket Yonu" },
+          { dataIndex: "doc_no", key: "doc_no", title: "Sistem Evrak No" },
+          { dataIndex: "direction", key: "direction", title: "Hareket Yönü" },
           {
             dataIndex: "merge_role",
             key: "merge_role",
             render: (_value, record) => <DeliveryRoleTag record={record} />,
-            title: "Irsaliye Tipi",
+            title: "İrsaliye Tipi",
           },
           { dataIndex: "doc_date", key: "doc_date", render: formatDate, title: "Tarih" },
-          { dataIndex: "line_count", key: "line_count", title: "Satir" },
+          { dataIndex: "line_count", key: "line_count", title: "Satır" },
         ]}
         dataSource={candidates}
         loading={loading}
@@ -1005,7 +980,7 @@ function InvoiceDeliveryImportDrawer({
         size="small"
       />
       <Space className="kagu-drawer-actions">
-        <Button onClick={onClose}>Vazgec</Button>
+        <Button onClick={onClose}>Vazgeç</Button>
         <Button disabled={loading || !selectedId} loading={loading} onClick={submit} type="primary">
           Aktar
         </Button>
@@ -1059,9 +1034,9 @@ function DocumentListFilters({
         onChange={(value) => updateFilter("status", value)}
         options={[
           { label: "Taslak", value: "DRAFT" },
-          { label: "Onayli", value: "APPROVED" },
-          { label: "Degistirildi", value: "SUPERSEDED" },
-          { label: "Iptal", value: "VOID" },
+          { label: "Onaylı", value: "APPROVED" },
+          { label: "Değiştirildi", value: "SUPERSEDED" },
+          { label: "İptal", value: "VOID" },
         ]}
         placeholder="Durum"
         style={{ width: 150 }}
@@ -1073,7 +1048,7 @@ function DocumentListFilters({
           onChange={(value) => updateFilter("accountId", value)}
           optionFilterProp="label"
           options={selectableLookupOptions(lookups.accounts)}
-          placeholder={module.entity === "transfers" ? "Cari (giris/cikis)" : "Cari"}
+          placeholder={module.entity === "transfers" ? "Cari (giriş/çıkış)" : "Cari"}
           showSearch
           style={{ minWidth: 240 }}
           value={filters.accountId}
@@ -1112,7 +1087,7 @@ function DocumentListFilters({
           allowClear
           onChange={(value) => updateFilter("direction", value)}
           options={directionField.options}
-          placeholder="Hareket Yonu"
+          placeholder="Hareket Yönü"
           style={{ width: 130 }}
           value={filters.direction}
         />
@@ -1122,7 +1097,7 @@ function DocumentListFilters({
           allowClear
           onChange={(value) => updateFilter("invoiceKind", value)}
           options={invoiceKindField.options}
-          placeholder="Fatura turu"
+          placeholder="Fatura türü"
           style={{ width: 160 }}
           value={filters.invoiceKind}
         />
@@ -1135,7 +1110,7 @@ function DocumentListFilters({
             dateTo: dates?.[1]?.format("YYYY-MM-DD") ?? undefined,
           })
         }
-        placeholder={["Baslangic", "Bitis"]}
+        placeholder={["Başlangıç", "Bitiş"]}
         value={dateRangeValue}
       />
       <Button disabled={!hasFilters} onClick={clearFilters}>
@@ -1166,23 +1141,23 @@ function DocumentPostingDetail({
       <Typography.Text className="kagu-section-kicker">
         Detay
       </Typography.Text>
-      <Card size="small" title="Belge Detayi">
+      <Card size="small" title="Belge Detayı">
         <Descriptions column={2} size="small">
           <Descriptions.Item label="Depo">
             {String(detail.header.warehouse_id ?? "-")}
           </Descriptions.Item>
-          <Descriptions.Item label="Fatura Baglantisi">
+          <Descriptions.Item label="Fatura Bağlantısı">
             {formatInvoiceLink(detail.header)}
           </Descriptions.Item>
-          <Descriptions.Item label="Kaynak Irsaliyeler" span={2}>
+          <Descriptions.Item label="Kaynak İrsaliyeler" span={2}>
             {sourceDeliverySummary}
           </Descriptions.Item>
-          <Descriptions.Item label="Aciklama" span={2}>
+          <Descriptions.Item label="Açıklama" span={2}>
             {String(detail.header.description ?? "-")}
           </Descriptions.Item>
         </Descriptions>
       </Card>
-      <Card size="small" title="Revizyon Gecmisi">
+      <Card size="small" title="Revizyon Geçmişi">
         <Descriptions column={2} size="small">
           <Descriptions.Item label="Durum">
             <DocumentStatusTag muted={isMutedDocumentRecord(detail.header)} status={status} />
@@ -1190,28 +1165,28 @@ function DocumentPostingDetail({
           <Descriptions.Item label="Etkili">
             <StockEffectTag isEffective={detail.header.is_effective} />
           </Descriptions.Item>
-          <Descriptions.Item label="Yerine Gecen Belge">
+          <Descriptions.Item label="Yerine Geçen Belge">
             {String(detail.header.superseded_by_id ?? "-")}
           </Descriptions.Item>
           <Descriptions.Item label="Kaynak Belge">
             {String(detail.header.supersedes_id ?? "-")}
           </Descriptions.Item>
-          <Descriptions.Item label="Degisiklik Notu" span={2}>
+          <Descriptions.Item label="Değişiklik Notu" span={2}>
             {String(detail.header.change_note ?? "-")}
           </Descriptions.Item>
-          <Descriptions.Item label="Degistiren Kullanici">
+          <Descriptions.Item label="Değiştiren Kullanıcı">
             {String(detail.header.changed_by_user_id ?? "-")}
           </Descriptions.Item>
-          <Descriptions.Item label="Degistirilme Zamani">
+          <Descriptions.Item label="Değiştirilme Zamanı">
             {formatDateTime(detail.header.superseded_at ?? detail.header.voided_at)}
           </Descriptions.Item>
         </Descriptions>
       </Card>
       <Table
         columns={[
-          { dataIndex: "doc_no", key: "doc_no", title: "Evrak No" },
+          { dataIndex: "doc_no", key: "doc_no", title: "Sistem Evrak No" },
           { dataIndex: "status", key: "status", title: "Durum" },
-          { dataIndex: "change_note", key: "change_note", title: "Degisiklik Notu" },
+          { dataIndex: "change_note", key: "change_note", title: "Değişiklik Notu" },
           {
             dataIndex: "superseded_at",
             key: "superseded_at",
@@ -1220,7 +1195,7 @@ function DocumentPostingDetail({
           },
         ]}
         dataSource={detail.revisions}
-        locale={{ emptyText: <Empty description="Revizyon kaydi yok" /> }}
+        locale={{ emptyText: <Empty description="Revizyon kaydı yok" /> }}
         pagination={false}
         rowKey={(record) => String(record.id)}
         size="small"
@@ -1232,13 +1207,13 @@ function DocumentPostingDetail({
               Net {formatMinor(invoiceMetrics.invoiceNetTotalMinor, currency)}
             </Tag>
             <Tag className="kagu-tag kagu-tag-neutral">
-              Brut {formatMinor(invoiceMetrics.invoiceGrossTotalMinor, currency)}
+              Brüt {formatMinor(invoiceMetrics.invoiceGrossTotalMinor, currency)}
             </Tag>
             <Tag className="kagu-tag kagu-tag-neutral">
               Maliyet {formatMinor(invoiceMetrics.costTotalMinor, currency)}
             </Tag>
             <Tag className="kagu-tag kagu-tag-neutral">
-              Kar {formatMinor(invoiceMetrics.profitMinor, currency)}
+              Kâr {formatMinor(invoiceMetrics.profitMinor, currency)}
             </Tag>
             <Tag className="kagu-tag kagu-tag-neutral">
               Marj{" "}
@@ -1251,16 +1226,16 @@ function DocumentPostingDetail({
       ) : null}
       <Table<(typeof detail.ledgerEntries)[number]>
         columns={[
-          { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
+          { dataIndex: "docNo", key: "docNo", title: "Sistem Evrak No" },
           { dataIndex: "accountId", key: "accountId", title: "Cari" },
-          { dataIndex: "relatedAccountId", key: "relatedAccountId", title: "Ilgili Cari" },
-          { dataIndex: "description", key: "description", title: "Aciklama" },
+          { dataIndex: "relatedAccountId", key: "relatedAccountId", title: "İlgili Cari" },
+          { dataIndex: "description", key: "description", title: "Açıklama" },
           {
             dataIndex: "debitMinor",
             key: "debitMinor",
             render: (value: unknown, record: { currency?: unknown }) =>
               formatMinor(value, String(record.currency ?? "TRY")),
-            title: "Borc",
+            title: "Borç",
           },
           {
             dataIndex: "creditMinor",
@@ -1271,7 +1246,7 @@ function DocumentPostingDetail({
           },
         ]}
         dataSource={detail.ledgerEntries.map((entry) => ({ ...entry }))}
-        locale={{ emptyText: <Empty description="Ledger entry yok" /> }}
+        locale={{ emptyText: <Empty description="Defter kaydı yok" /> }}
         pagination={false}
         rowClassName={(record) => (record.isEffective === false ? "kagu-row-muted" : "")}
         rowKey="id"
@@ -1279,11 +1254,11 @@ function DocumentPostingDetail({
       />
       <Table<(typeof detail.stockMovements)[number]>
         columns={[
-          { dataIndex: "docNo", key: "docNo", title: "Evrak No" },
+          { dataIndex: "docNo", key: "docNo", title: "Sistem Evrak No" },
           { dataIndex: "warehouseId", key: "warehouseId", title: "Depo" },
           { dataIndex: "itemId", key: "itemId", title: "Malzeme" },
-          { dataIndex: "qtyIn", key: "qtyIn", title: "Giris" },
-          { dataIndex: "qtyOut", key: "qtyOut", title: "Cikis" },
+          { dataIndex: "qtyIn", key: "qtyIn", title: "Giriş" },
+          { dataIndex: "qtyOut", key: "qtyOut", title: "Çıkış" },
         ]}
         dataSource={detail.stockMovements}
         locale={{ emptyText: <Empty description="Stok etkili evrak yok" /> }}
@@ -1295,15 +1270,15 @@ function DocumentPostingDetail({
       <Table
         columns={[
           { dataIndex: "createdAt", key: "createdAt", render: formatDateTime, title: "Zaman" },
-          { dataIndex: "action", key: "action", title: "Islem" },
-          { dataIndex: "actorUserId", key: "actorUserId", title: "Kullanici" },
+          { dataIndex: "action", key: "action", title: "İşlem" },
+          { dataIndex: "actorUserId", key: "actorUserId", title: "Kullanıcı" },
         ]}
         dataSource={detail.auditEvents}
-        locale={{ emptyText: <Empty description="Audit kaydi yok" /> }}
+        locale={{ emptyText: <Empty description="Denetim kaydı yok" /> }}
         pagination={false}
         rowKey="id"
         size="small"
-        title={() => "Audit Bilgisi"}
+        title={() => "Denetim Bilgisi"}
       />
     </Space>
   );
@@ -1332,7 +1307,7 @@ function summarizeSourceDeliveryLinks(detail: DocumentDetail<DataRecord>) {
     return "-";
   }
 
-  return `${ids.size} kaynak satir`;
+  return `${ids.size} kaynak satır`;
 }
 
 function formatInvoiceLink(header: DataRecord) {
@@ -1345,7 +1320,7 @@ function formatInvoiceLink(header: DataRecord) {
   const invoiceAt = header.invoiced_at;
 
   if (typeof invoiceAt === "string" && invoiceAt.trim()) {
-    return `Faturalandi: ${invoiceAt}`;
+    return `Faturalandı: ${invoiceAt}`;
   }
 
   return "-";
@@ -1471,7 +1446,7 @@ function DocumentDescriptionField({ entity }: { entity: DocumentEntity }) {
   return (
     <Form.Item
       className="kagu-document-description"
-      label={entity === "invoices" ? "Fatura Aciklamasi" : "Irsaliye Aciklamasi"}
+      label={entity === "invoices" ? "Fatura Açıklaması" : "İrsaliye Açıklaması"}
       name="description"
     >
       <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} />
@@ -1538,8 +1513,8 @@ function DocumentHeaderField({
           }))}
           placeholder={
             availableProjects.length
-              ? "Cari projesi sec"
-              : "Once cari secin veya cari projesi tanimlayin"
+              ? "Cari projesi seç"
+              : "Önce cari seçin veya cari projesi tanımlayın"
           }
           showSearch
         />
@@ -1561,7 +1536,7 @@ function DocumentHeaderField({
 
   if (field.name === "invoiceKind" && field.type === "select") {
     const options = lockedInvoiceKind
-      ? [{ label: lockedInvoiceKind === "SALES" ? "Satis" : "Alis", value: lockedInvoiceKind }]
+      ? [{ label: lockedInvoiceKind === "SALES" ? "Satış" : "Alış", value: lockedInvoiceKind }]
       : field.options;
 
     return (
@@ -1575,7 +1550,7 @@ function DocumentHeaderField({
     const options = lockedDeliveryDirection
       ? [
           {
-            label: lockedDeliveryDirection === "OUT" ? "Cikis" : "Giris",
+            label: lockedDeliveryDirection === "OUT" ? "Çıkış" : "Giriş",
             value: lockedDeliveryDirection,
           },
         ]
@@ -1804,7 +1779,7 @@ function EditableLineTable({
 
             return (
               <Space size={2}>
-                <Tooltip title={linkedLine ? "Kilitli satir" : "Satiri kopyala"}>
+                <Tooltip title={linkedLine ? "Kilitli satır" : "Satırı kopyala"}>
                   <Button
                     disabled={tableLocked || linkedLine}
                     icon={linkedLine ? <LockOutlined /> : <CopyOutlined />}
@@ -1813,7 +1788,7 @@ function EditableLineTable({
                     type="text"
                   />
                 </Tooltip>
-                <Tooltip title={linkedLine ? "Irsaliyeden gelen satir silinemez" : "Satiri sil"}>
+                <Tooltip title={linkedLine ? "İrsaliyeden gelen satır silinemez" : "Satırı sil"}>
                   <Button
                     danger
                     disabled={tableLocked || linkedLine}
@@ -1832,7 +1807,7 @@ function EditableLineTable({
       ]}
       dataSource={fields}
       footer={() => (
-        <Tooltip title="Satir ekle">
+        <Tooltip title="Satır ekle">
           <Button
             disabled={tableLocked}
             icon={<PlusOutlined />}
@@ -2062,15 +2037,25 @@ function renderDocumentCell(
 
   if (key === "is_return") {
     if (!value) {
-      return "-";
+      return null;
     }
 
     return (
-      <DeliveryMovementTag
-        direction={record.direction}
-        isReturn={value}
-        muted={isMutedDocumentRecord(record)}
-      />
+      <Tooltip title="İade irsaliyesi">
+        <RollbackOutlined aria-label="İade irsaliyesi" />
+      </Tooltip>
+    );
+  }
+
+  if (key === "invoice_type") {
+    if (value !== "STAR") {
+      return null;
+    }
+
+    return (
+      <Tooltip title="Yıldız fatura">
+        <StarFilled aria-label="Yıldız fatura" style={{ color: "#b7791f" }} />
+      </Tooltip>
     );
   }
 
@@ -2091,6 +2076,72 @@ function renderDocumentCell(
   }
 
   return value ? String(value) : "-";
+}
+
+function DocumentRowActions({
+  entity,
+  onApprove,
+  onOpen,
+  onUnmerge,
+  onVoid,
+  record,
+}: {
+  entity: DocumentEntity;
+  onApprove: () => void;
+  onOpen: () => void;
+  onUnmerge: () => void;
+  onVoid: () => void;
+  record: DataRecord;
+}) {
+  const canApprove = record.status === "DRAFT";
+  const canVoid = record.status !== "VOID" && canShowVoidAction(entity, record);
+  const canUnmerge =
+    entity === "deliveryNotes" &&
+    record.merge_role === "MERGED_RESULT" &&
+    record.status === "APPROVED" &&
+    record.is_effective !== false &&
+    !record.invoiced_by_invoice_id;
+
+  return (
+    <Space size={4}>
+      <Tooltip title={record.status === "VOID" ? "İptal edilmiş belge açılamaz" : "Aç"}>
+        <Button
+          disabled={record.status === "VOID"}
+          icon={<EyeOutlined />}
+          onClick={onOpen}
+          size="small"
+          type="text"
+        />
+      </Tooltip>
+      <Tooltip title={canApprove ? "Onayla" : "Yalnızca taslak belgeler onaylanabilir"}>
+        <Button
+          disabled={!canApprove}
+          icon={<CheckCircleOutlined />}
+          onClick={onApprove}
+          size="small"
+          style={{ color: canApprove ? "#2f855a" : undefined }}
+          type="text"
+        />
+      </Tooltip>
+      {canShowVoidAction(entity, record) ? (
+        <Tooltip title={canVoid ? "İptal" : "Belge zaten iptal edilmiş"}>
+          <Button
+            danger
+            disabled={!canVoid}
+            icon={<CloseCircleOutlined />}
+            onClick={onVoid}
+            size="small"
+            type="text"
+          />
+        </Tooltip>
+      ) : null}
+      {canUnmerge ? (
+        <Tooltip title="Birleşimi çöz">
+          <Button icon={<RollbackOutlined />} onClick={onUnmerge} size="small" type="text" />
+        </Tooltip>
+      ) : null}
+    </Space>
+  );
 }
 
 function canShowVoidAction(entity: DocumentEntity, record: DataRecord) {
@@ -2136,6 +2187,14 @@ function documentDrawerSize(entity: DocumentEntity) {
 }
 
 function documentListColumnWidth(key: string) {
+  if (key === "is_return" || key === "invoice_type") {
+    return 76;
+  }
+
+  if (key === "doc_no" || key === "actual_doc_no") {
+    return 150;
+  }
+
   if (key.includes("account") || key.includes("project")) {
     return 220;
   }

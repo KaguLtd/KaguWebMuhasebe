@@ -85,7 +85,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
       setError(
         error instanceof Error
           ? error.message
-          : "Kullanici ve rol bilgileri alinamadi.",
+          : "Kullanıcı ve rol bilgileri alınamadı.",
       );
     } finally {
       setLoading(false);
@@ -126,7 +126,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
 
       if (editingUser) {
         await updateSettingsUser(editingUser.id, payload);
-        message.success("Kullanici guncellendi.");
+        message.success("Kullanıcı güncellendi.");
       } else {
         await createSettingsUser({
           password: payload.password ?? "",
@@ -136,7 +136,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
           isActive: payload.isActive,
           roleIds: payload.roleIds,
         });
-        message.success("Kullanici eklendi.");
+        message.success("Kullanıcı eklendi.");
       }
 
       setDrawerOpen(false);
@@ -184,7 +184,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           <Space orientation="vertical" size={0}>
             <Typography.Text className="kagu-section-kicker">
-              Settings
+              Ayarlar
             </Typography.Text>
             <Typography.Title level={4} style={{ margin: 0 }}>
               Roller
@@ -207,13 +207,13 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
               {
                 dataIndex: "description",
                 key: "description",
-                title: "Aciklama",
+                title: "Açıklama",
                 render: (value: string | null | undefined) => value || "-",
               },
               {
                 dataIndex: "userCount",
                 key: "userCount",
-                title: "Kullanici",
+                title: "Kullanıcı",
                 width: 120,
               },
               {
@@ -222,7 +222,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
                 title: "Rol Tipi",
                 render: (value: boolean | undefined) => (
                   <Tag color={value ? "gold" : "default"}>
-                    {value ? "Sistem" : "Ozel"}
+                    {value ? "Sistem" : "Özel"}
                   </Tag>
                 ),
                 width: 120,
@@ -230,7 +230,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
             ]}
             dataSource={roles}
             loading={loading}
-            locale={{ emptyText: <Empty description="Rol kaydi bulunamadi" /> }}
+            locale={{ emptyText: <Empty description="Rol kaydı bulunamadı" /> }}
             pagination={false}
             rowKey="id"
             size="small"
@@ -247,17 +247,17 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
         <Space>
           <Button onClick={() => void loadData()}>Yenile</Button>
           <Button onClick={openCreateDrawer} type="primary">
-            Yeni Kullanici
+            Yeni Kullanıcı
           </Button>
         </Space>
       }
       title={
         <Space orientation="vertical" size={0}>
           <Typography.Text className="kagu-section-kicker">
-            Settings
+            Ayarlar
           </Typography.Text>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            Kullanici Yonetimi
+            Kullanıcı Yönetimi
           </Typography.Title>
         </Space>
       }
@@ -267,7 +267,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
         <Input.Search
           allowClear
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Kullanici adi, ad soyad, e-posta veya rol ara"
+          placeholder="Kullanıcı adı, ad soyad, e-posta veya rol ara"
           value={search}
         />
         <Table<SettingsUser>
@@ -276,7 +276,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
             {
               dataIndex: "username",
               key: "username",
-              title: "Kullanici Adi",
+              title: "Kullanıcı Adı",
               width: 180,
             },
             {
@@ -321,7 +321,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
             {
               dataIndex: "lastLoginAt",
               key: "lastLoginAt",
-              title: "Son Giris",
+              title: "Son Giriş",
               render: (value: string | null | undefined) =>
                 value ? formatDateTime(value) : "-",
               width: 180,
@@ -331,7 +331,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
               key: "actions",
               render: (_value: unknown, user: SettingsUser) => (
                 <Button onClick={() => openEditDrawer(user)} type="link">
-                  Duzenle
+                  Düzenle
                 </Button>
               ),
               title: "",
@@ -340,7 +340,7 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
           ]}
           dataSource={filteredUsers}
           loading={loading}
-          locale={{ emptyText: <Empty description="Kullanici kaydi bulunamadi" /> }}
+          locale={{ emptyText: <Empty description="Kullanıcı kaydı bulunamadı" /> }}
           pagination={{ pageSize: 10 }}
           rowKey="id"
           scroll={{ x: "max-content" }}
@@ -352,13 +352,13 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
         onClose={() => setDrawerOpen(false)}
         open={drawerOpen}
         size="min(640px, 96vw)"
-        title={editingUser ? "Kullaniciyi Duzenle" : "Yeni Kullanici"}
+        title={editingUser ? "Kullanıcıyı Düzenle" : "Yeni Kullanıcı"}
       >
         <Form form={form} layout="vertical">
           <Form.Item
-            label="Kullanici Adi"
+            label="Kullanıcı Adı"
             name="username"
-            rules={[{ required: true, message: "Kullanici adi gerekli" }]}
+            rules={[{ required: true, message: "Kullanıcı adı gerekli" }]}
           >
             <Input autoComplete="username" />
           </Form.Item>
@@ -368,23 +368,23 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
           <Form.Item
             label="E-posta"
             name="email"
-            rules={[{ type: "email", message: "Gecerli bir e-posta girin" }]}
+            rules={[{ type: "email", message: "Geçerli bir e-posta girin" }]}
           >
             <Input autoComplete="email" />
           </Form.Item>
           <Form.Item
-            label="Sifre"
+            label="Şifre"
             name="password"
             rules={
               editingUser
                 ? undefined
-                : [{ required: true, message: "Yeni kullanici icin sifre gerekli" }]
+                : [{ required: true, message: "Yeni kullanıcı için şifre gerekli" }]
             }
           >
             <Input.Password
               autoComplete={editingUser ? "new-password" : "current-password"}
               placeholder={
-              editingUser ? "Bos birakirsaniz mevcut sifre korunur" : undefined
+              editingUser ? "Boş bırakırsanız mevcut şifre korunur" : undefined
               }
             />
           </Form.Item>
@@ -393,16 +393,16 @@ export function SettingsUsersPanel({ mode }: SettingsUsersPanelProps) {
               mode="multiple"
               optionFilterProp="label"
               options={roleOptions}
-              placeholder="Rol secin"
+              placeholder="Rol seçin"
               showSearch
             />
           </Form.Item>
-          <Form.Item label="Aktif Kullanici" name="isActive" valuePropName="checked">
+          <Form.Item label="Aktif Kullanıcı" name="isActive" valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>
         <Space className="kagu-drawer-actions">
-          <Button onClick={() => setDrawerOpen(false)}>Vazgec</Button>
+          <Button onClick={() => setDrawerOpen(false)}>Vazgeç</Button>
           <Button disabled={saving} loading={saving} onClick={() => void handleSave()} type="primary">
             Kaydet
           </Button>

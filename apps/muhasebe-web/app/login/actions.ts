@@ -7,7 +7,7 @@ import { HttpError } from "@/lib/http/errors";
 
 export async function signIn(username: string, password: string) {
   if (!username.trim() || !password.trim()) {
-    throw new HttpError(400, "Kullanici adi ve sifre zorunludur");
+    throw new HttpError(400, "Kullanıcı adı ve şifre zorunludur");
   }
 
   await loginWithPassword(username.trim(), password);

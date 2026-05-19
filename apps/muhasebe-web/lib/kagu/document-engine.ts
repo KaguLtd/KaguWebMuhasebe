@@ -237,9 +237,11 @@ export function getDashboardTotals(): AppSnapshot["dashboard"] {
   const todayDate = today();
   const weekStart = addDays(todayDate, -6);
   const monthStart = todayDate.slice(0, 8) + "01";
+  const yearStart = todayDate.slice(0, 5) + "01-01";
   const dailySalesByCurrency = emptyCurrencyTotals();
   const weeklySalesByCurrency = emptyCurrencyTotals();
   const monthlySalesByCurrency = emptyCurrencyTotals();
+  const invoiceTotalsByCurrency = emptyCurrencyInvoiceTotals();
   const inventoryTotalByCurrency = getInventoryTotalsByCurrency();
   let todayDocumentCount = 0;
 
@@ -253,13 +255,29 @@ export function getDashboardTotals(): AppSnapshot["dashboard"] {
         continue;
       }
 
-      if (entity !== "invoices" || header.invoice_kind !== "SALES") {
+      if (entity !== "invoices" || header.is_effective === false) {
         continue;
       }
 
       const docDate = String(header.doc_date);
-      const amount = getInvoiceNetSalesTotal(String(header.id));
+      const amount = number(header.document_total_minor);
       const docCurrency = currency(header.currency);
+
+      if (docDate >= weekStart && docDate <= todayDate) {
+        invoiceTotalsByCurrency[docCurrency].weeklyMinor += amount;
+      }
+
+      if (docDate >= monthStart && docDate <= todayDate) {
+        invoiceTotalsByCurrency[docCurrency].monthlyMinor += amount;
+      }
+
+      if (docDate >= yearStart && docDate <= todayDate) {
+        invoiceTotalsByCurrency[docCurrency].yearlyMinor += amount;
+      }
+
+      if (header.invoice_kind !== "SALES") {
+        continue;
+      }
 
       if (docDate === todayDate) {
         dailySalesByCurrency[docCurrency] += amount;
@@ -285,6 +303,7 @@ export function getDashboardTotals(): AppSnapshot["dashboard"] {
     weeklySalesByCurrency,
     monthlySalesByCurrency,
     inventoryTotalByCurrency,
+    invoiceTotalsByCurrency,
   };
 }
 
@@ -677,14 +696,14 @@ function validateApproval(entity: DocumentEntity, header: DataRecord, lines: Dat
   }
 
   if (entity === "deliveryNotes" && !header.warehouse_id) {
-    throw new Error("Depo secimi zorunludur");
+    throw new Error("Depo seçimi zorunludur");
   }
 
   if (entity === "invoices") {
     const hasDirectInvoiceLines = lines.some((line) => !hasDeliveryLink(line));
 
     if (header.invoice_kind === "SALES" && hasDirectInvoiceLines && !header.warehouse_id) {
-      throw new Error("Depo secimi zorunludur");
+      throw new Error("Depo seçimi zorunludur");
     }
   }
 
@@ -716,11 +735,11 @@ function validateDocumentRules(entity: DocumentEntity, header: DataRecord) {
   const direction = String(header.direction ?? "");
 
   if (accountKind === "CUSTOMER" && direction !== "OUT") {
-    throw new Error("Musteri carilerde yalnizca cikis irsaliyesi kesilebilir.");
+    throw new Error("Müşteri carilerde yalnızca çıkış irsaliyesi kesilebilir.");
   }
 
   if (accountKind === "SUPPLIER" && direction !== "IN") {
-    throw new Error("Tedarikci carilerde yalnizca giris irsaliyesi kesilebilir.");
+    throw new Error("Tedarikçi carilerde yalnızca giriş irsaliyesi kesilebilir.");
   }
 }
 
@@ -788,7 +807,7 @@ function postDocument(entity: DocumentEntity, header: DataRecord, lines: DataRec
       debitMinor: isSales ? totalMinor : 0,
       creditMinor: isSales ? 0 : totalMinor,
       currency: currency(header.currency),
-      description: isSales ? "Satis faturasi" : "Alis faturasi",
+      description: isSales ? "Satış faturası" : "Alış faturası",
       createdAt,
       replacedByDocId: null,
     });
@@ -1071,15 +1090,6 @@ function getStoredSourceDeliveryLineIds(line: DataRecord) {
   return Array.from(
     new Set(allIds.map((value) => value.trim()).filter((value) => value.length > 0)),
   );
-}
-
-function getInvoiceNetSalesTotal(invoiceId: string) {
-  return getDocumentStore().lines.invoices
-    .filter((line) => line.invoice_id === invoiceId)
-    .reduce(
-      (total, line) => total + roundMinor(number(line.quantity) * number(line.unit_price_minor)),
-      0,
-    );
 }
 
 function resolveLatestPurchaseCost(
@@ -1397,6 +1407,15 @@ function roundMinor(value: number) {
 
 function emptyCurrencyTotals(): Record<Currency, number> {
   return { TRY: 0, USD: 0, EUR: 0, GBP: 0 };
+}
+
+function emptyCurrencyInvoiceTotals(): AppSnapshot["dashboard"]["invoiceTotalsByCurrency"] {
+  return {
+    TRY: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+    USD: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+    EUR: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+    GBP: { monthlyMinor: 0, weeklyMinor: 0, yearlyMinor: 0 },
+  };
 }
 
 function sumCurrencyTotals(totals: Record<Currency, number>) {

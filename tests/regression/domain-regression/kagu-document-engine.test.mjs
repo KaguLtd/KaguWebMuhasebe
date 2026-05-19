@@ -186,7 +186,7 @@ test("customer delivery notes only allow OUT direction, including returns", () =
           },
         ],
       }),
-    /Musteri carilerde yalnizca cikis irsaliyesi kesilebilir\./,
+    /Müşteri carilerde yalnızca çıkış irsaliyesi kesilebilir\./,
   );
 
   const normal = engine.saveDocumentDraft("deliveryNotes", {
@@ -243,7 +243,7 @@ test("supplier delivery notes only allow IN direction, including returns", () =>
           },
         ],
       }),
-    /Tedarikci carilerde yalnizca giris irsaliyesi kesilebilir\./,
+    /Tedarikçi carilerde yalnızca giriş irsaliyesi kesilebilir\./,
   );
 
   const normal = engine.saveDocumentDraft("deliveryNotes", {

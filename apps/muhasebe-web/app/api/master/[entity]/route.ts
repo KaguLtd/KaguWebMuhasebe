@@ -47,7 +47,7 @@ export async function POST(request: Request, context: RouteContext) {
     await requirePermissions(
       user,
       routePermissions.masterWrite(entity),
-      "Master verisini guncelleme yetkiniz yok",
+      "Master verisini güncelleme yetkiniz yok",
     );
 
     return NextResponse.json({

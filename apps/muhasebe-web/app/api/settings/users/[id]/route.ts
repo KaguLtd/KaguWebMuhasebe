@@ -18,15 +18,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     await requirePermissions(
       user,
       routePermissions.settingsUsersWrite(),
-      "Kullanici guncelleme yetkiniz yok",
+      "Kullanıcı güncelleme yetkiniz yok",
     );
 
     const payload = await parseUserPayload(request, { partial: true });
 
     return NextResponse.json({
-      item: await updateUser(requireStringId(id, "Kullanici id zorunludur"), payload),
+      item: await updateUser(requireStringId(id, "Kullanıcı id zorunludur"), payload),
     });
   } catch (error) {
-    return jsonBadRequest(error, "Kullanici guncellenemedi");
+    return jsonBadRequest(error, "Kullanıcı güncellenemedi");
   }
 }
